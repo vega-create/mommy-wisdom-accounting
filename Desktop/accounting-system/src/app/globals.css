@@ -227,7 +227,7 @@ body {
 
 /* Brand specific components */
 .brand-header {
-  @apply bg-gradient-to-r from-brand-primary-700 via-brand-primary-600 to-brand-accent-DEFAULT;
+  @apply bg-gradient-to-r from-brand-primary-700 via-brand-primary-600 to-brand-accent;
 }
 
 .brand-card {
