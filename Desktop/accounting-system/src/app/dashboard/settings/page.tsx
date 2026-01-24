@@ -74,14 +74,19 @@ export default function SettingsPage() {
       .eq('company_id', company.id);
 
     if (!error && data) {
-      const formattedUsers = data.map(item => ({
-        ...item.user,
+      const formattedUsers: UserWithCompanies[] = data.map((item: any) => ({
+        id: item.user?.id || '',
+        email: item.user?.email || '',
+        name: item.user?.name || '',
+        role: item.user?.role || 'viewer',
+        is_active: item.user?.is_active ?? true,
+        created_at: item.user?.created_at || '',
         user_companies: [{
           company_id: company.id,
           role: item.role,
           company: company
         }]
-      })) as UserWithCompanies[];
+      }));
       
       setUsers(formattedUsers);
     }

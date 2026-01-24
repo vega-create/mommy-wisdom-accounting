@@ -40,20 +40,22 @@ export default function IncomeStatementPage() {
     approvedVouchers.forEach(voucher => {
       const items = voucherItems.filter(item => item.voucher_id === voucher.id);
       items.forEach(item => {
-        const account = defaultAccountCategories.find(a => a.code === item.account_id);
+        const accountId = item.account_id;
+        if (!accountId) return;
+        const account = defaultAccountCategories.find(a => a.code === accountId);
         if (!account) return;
 
         // 只處理收入、成本、費用類科目
         if (!['revenue', 'cost', 'expense'].includes(account.type)) return;
 
-        const currentAmount = accountAmounts.get(item.account_id) || 0;
+        const currentAmount = accountAmounts.get(accountId) || 0;
         
         // 收入類：貸方增加
         // 成本/費用類：借方增加
         if (account.type === 'revenue') {
-          accountAmounts.set(item.account_id, currentAmount + item.credit_amount - item.debit_amount);
+          accountAmounts.set(accountId, currentAmount + item.credit_amount - item.debit_amount);
         } else {
-          accountAmounts.set(item.account_id, currentAmount + item.debit_amount - item.credit_amount);
+          accountAmounts.set(accountId, currentAmount + item.debit_amount - item.credit_amount);
         }
       });
     });

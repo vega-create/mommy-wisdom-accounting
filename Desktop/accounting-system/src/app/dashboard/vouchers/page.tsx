@@ -70,7 +70,7 @@ export default function VouchersPage() {
   const filteredVouchers = useMemo(() => {
     return companyVouchers.filter(voucher => {
       const matchesSearch = voucher.voucher_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        voucher.description.toLowerCase().includes(searchTerm.toLowerCase());
+        (voucher.description || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = filterType === 'all' || voucher.voucher_type === filterType;
       const matchesStatus = filterStatus === 'all' || voucher.status === filterStatus;
       return matchesSearch && matchesType && matchesStatus;
@@ -193,7 +193,8 @@ export default function VouchersPage() {
   }, [companyVouchers]);
 
   // 取得科目名稱
-  const getAccountName = (accountId: string) => {
+  const getAccountName = (accountId: string | null) => {
+    if (!accountId) return '-';
     const parts = accountId.split('-');
     const accountIndex = parseInt(parts[parts.length - 1]);
     if (!isNaN(accountIndex) && defaultAccountCategories[accountIndex]) {

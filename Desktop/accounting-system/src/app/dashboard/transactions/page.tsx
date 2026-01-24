@@ -76,6 +76,8 @@ export default function TransactionsPage() {
     to_account_id: '',
     category_id: '',
     customer_id: '',
+    voucher_id: null as string | null,
+    tags: null as string[] | null,
     notes: '',
   });
 
@@ -204,6 +206,8 @@ export default function TransactionsPage() {
       to_account_id: '',
       category_id: '',
       customer_id: '',
+      voucher_id: null,
+      tags: null,
       notes: '',
     });
   };

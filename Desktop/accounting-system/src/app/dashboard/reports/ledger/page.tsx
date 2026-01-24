@@ -61,12 +61,15 @@ export default function LedgerPage() {
       const voucher = approvedVouchers.find(v => v.id === item.voucher_id);
       if (!voucher) return;
 
-      const account = defaultAccountCategories.find(a => a.code === item.account_id);
+      const accountId = item.account_id;
+      if (!accountId) return;
+      
+      const account = defaultAccountCategories.find(a => a.code === accountId);
       if (!account) return;
 
-      if (!ledgers.has(item.account_id || '')) {
-        ledgers.set(item.account_id || '', {
-          code: item.account_id || '',
+      if (!ledgers.has(accountId)) {
+        ledgers.set(accountId, {
+          code: accountId,
           name: item.description || '',
           type: account.type as AccountType,
           openingBalance: 0,
@@ -77,7 +80,7 @@ export default function LedgerPage() {
         });
       }
 
-      const ledger = ledgers.get(item.account_id)!;
+      const ledger = ledgers.get(accountId)!;
       const voucherDate = new Date(voucher.voucher_date);
       const periodStart = new Date(startDate);
       const periodEnd = new Date(endDate);
@@ -96,13 +99,13 @@ export default function LedgerPage() {
         ledger.entries.push({
           date: voucher.voucher_date,
           voucherNumber: voucher.voucher_number,
-          description: item.description || voucher.description,
+          description: item.description || voucher.description || '',
           debit: item.debit_amount,
           credit: item.credit_amount,
           balance: 0, // 稍後計算
         });
-        ledger.total_debit += item.debit_amount;
-        ledger.total_credit += item.credit_amount;
+        ledger.totalDebit += item.debit_amount;
+        ledger.totalCredit += item.credit_amount;
       }
     });
 
@@ -127,7 +130,7 @@ export default function LedgerPage() {
     return Array.from(ledgers.values())
       .filter(l => l.entries.length > 0 || l.openingBalance !== 0)
       .sort((a, b) => a.code.localeCompare(b.code));
-  }, [vouchers, voucherItems, currentCompany, startDate, endDate]);
+  }, [vouchers, voucherItems, company, startDate, endDate]);
 
   // 篩選後的科目
   const filteredLedgers = useMemo(() => {
@@ -188,7 +191,7 @@ export default function LedgerPage() {
           '',
           '',
           format(new Date(entry.date), 'yyyy/MM/dd'),
-          entry.voucher_number,
+          entry.voucherNumber,
           entry.description,
           entry.debit > 0 ? formatCurrency(entry.debit) : '',
           entry.credit > 0 ? formatCurrency(entry.credit) : '',
@@ -202,8 +205,8 @@ export default function LedgerPage() {
         '',
         '',
         '期末餘額',
-        formatCurrency(ledger.total_debit),
-        formatCurrency(ledger.total_credit),
+        formatCurrency(ledger.totalDebit),
+        formatCurrency(ledger.totalCredit),
         formatCurrency(ledger.closingBalance),
       ]);
       // 空行
@@ -296,7 +299,7 @@ export default function LedgerPage() {
       {/* 報表 */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border-none">
         <div className="p-6 border-b border-gray-200 text-center print:border-b-2 print:border-black">
-          <h2 className="text-xl font-bold">{currentCompany?.name}</h2>
+          <h2 className="text-xl font-bold">{company?.name}</h2>
           <h3 className="text-lg font-semibold mt-1">總 分 類 帳</h3>
           <p className="text-sm text-gray-600 mt-1">
             期間：{format(new Date(startDate), 'yyyy年MM月dd日', { locale: zhTW })} 至 {format(new Date(endDate), 'yyyy年MM月dd日', { locale: zhTW })}
@@ -376,7 +379,7 @@ export default function LedgerPage() {
                                 {format(new Date(entry.date), 'MM/dd')}
                               </td>
                               <td className="py-2 px-4 font-mono text-blue-600">
-                                {entry.voucher_number}
+                                {entry.voucherNumber}
                               </td>
                               <td className="py-2 px-4 text-gray-600">{entry.description}</td>
                               <td className="py-2 px-4 text-right font-mono">
@@ -396,10 +399,10 @@ export default function LedgerPage() {
                               本期合計 / 期末餘額
                             </td>
                             <td className="py-2 px-4 text-right font-mono">
-                              {formatCurrency(ledger.total_debit)}
+                              {formatCurrency(ledger.totalDebit)}
                             </td>
                             <td className="py-2 px-4 text-right font-mono">
-                              {formatCurrency(ledger.total_credit)}
+                              {formatCurrency(ledger.totalCredit)}
                             </td>
                             <td className="py-2 px-4 text-right font-mono">
                               {formatCurrency(ledger.closingBalance)}

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useDataStore } from '@/stores/dataStore';
@@ -19,6 +20,11 @@ import {
   TrendingUp,
   Users,
   Settings,
+  MessageSquare,
+  FileCheck,
+  CreditCard,
+  FileSpreadsheet,
+  ScrollText,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -63,6 +69,37 @@ const navigation = [
       { name: '損益表', href: '/dashboard/reports/income-statement', icon: TrendingUp },
     ],
   },
+  // Phase 1-7 功能預留
+  {
+    name: 'LINE 通知',
+    href: '/dashboard/line',
+    icon: MessageSquare,
+    badge: 'Phase 1',
+  },
+  {
+    name: '請款管理',
+    href: '/dashboard/billing',
+    icon: CreditCard,
+    badge: 'Phase 3',
+  },
+  {
+    name: '電子發票',
+    href: '/dashboard/invoices',
+    icon: FileSpreadsheet,
+    badge: 'Phase 5',
+  },
+  {
+    name: '勞報系統',
+    href: '/dashboard/labor',
+    icon: FileCheck,
+    badge: 'Phase 6',
+  },
+  {
+    name: '報價合約',
+    href: '/dashboard/contracts',
+    icon: ScrollText,
+    badge: 'Phase 7',
+  },
 ];
 
 export default function Sidebar() {
@@ -95,49 +132,49 @@ export default function Sidebar() {
   const currentRole = userCompanies.find(uc => uc.company_id === company?.id)?.role || 'viewer';
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
-      {/* Logo */}
-      <div className="p-4 border-b border-gray-100">
+    <div className="w-64 bg-white border-r border-brand-primary-100 flex flex-col h-screen">
+      {/* Logo - Brand Header */}
+      <div className="p-4 border-b border-brand-primary-100 bg-gradient-to-r from-brand-primary-50 to-white">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 bg-brand-primary-700 rounded-xl flex items-center justify-center shadow-brand">
+            <span className="text-white font-bold text-sm">MW</span>
           </div>
           <div>
-            <h1 className="font-bold text-gray-900">Mommy Wisdom</h1>
-            <p className="text-xs text-gray-500">會計系統</p>
+            <h1 className="font-bold text-brand-primary-700">智慧媽咪</h1>
+            <p className="text-xs text-brand-primary-400">商業管理系統</p>
           </div>
         </div>
       </div>
 
       {/* Company Selector */}
-      <div className="p-3 border-b border-gray-100">
+      <div className="p-3 border-b border-brand-primary-50">
         <div className="relative">
           <button
             onClick={() => setShowCompanySelector(!showCompanySelector)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 bg-brand-primary-50 rounded-lg hover:bg-brand-primary-100 transition-colors"
           >
             <div className="flex items-center gap-2 truncate">
-              <Building2 className="w-4 h-4 text-gray-500 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-700 truncate">
+              <Building2 className="w-4 h-4 text-brand-primary-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-brand-primary-700 truncate">
                 {company?.name || '選擇公司'}
               </span>
             </div>
-            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showCompanySelector ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 text-brand-primary-400 transition-transform ${showCompanySelector ? 'rotate-180' : ''}`} />
           </button>
           
           {showCompanySelector && userCompanies.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 z-10 animate-fade-in">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-brand border border-brand-primary-100 z-10 animate-fade-in">
               {userCompanies.map(uc => (
                 <button
                   key={uc.company_id}
                   onClick={() => handleCompanySwitch(uc.company_id)}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
-                    company?.id === uc.company_id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-brand-primary-50 first:rounded-t-lg last:rounded-b-lg ${
+                    company?.id === uc.company_id ? 'bg-brand-primary-100 text-brand-primary-700' : 'text-gray-700'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span>{uc.company?.name}</span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-brand-primary-400">
                       {uc.role === 'admin' ? '管理員' : uc.role === 'accountant' ? '會計' : '檢視者'}
                     </span>
                   </div>
@@ -158,7 +195,12 @@ export default function Sidebar() {
                 className={`nav-item ${pathname === item.href ? 'active' : ''}`}
               >
                 <item.icon className="w-5 h-5" />
-                <span>{item.name}</span>
+                <span className="flex-1">{item.name}</span>
+                {item.badge && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-brand-primary-100 text-brand-primary-600 rounded-full">
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             ) : (
               <>
@@ -208,14 +250,14 @@ export default function Sidebar() {
       </nav>
 
       {/* User Info & Logout */}
-      <div className="p-3 border-t border-gray-100">
-        <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg mb-2">
-          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-            <Users className="w-4 h-4 text-blue-600" />
+      <div className="p-3 border-t border-brand-primary-100">
+        <div className="flex items-center gap-3 px-3 py-2 bg-brand-primary-50 rounded-lg mb-2">
+          <div className="w-8 h-8 bg-brand-primary-100 rounded-full flex items-center justify-center">
+            <Users className="w-4 h-4 text-brand-primary-700" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
-            <p className="text-xs text-gray-500 truncate">
+            <p className="text-xs text-brand-primary-500 truncate">
               {currentRole === 'admin' ? '管理員' : currentRole === 'accountant' ? '會計' : '檢視者'}
             </p>
           </div>

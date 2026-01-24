@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { Eye, EyeOff, Building2, UserPlus, LogIn } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, LogIn } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,34 +60,57 @@ export default function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-brand-primary-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary-700"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-primary-50 via-white to-brand-primary-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo & Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl shadow-lg mb-4">
-            <Building2 className="w-8 h-8 text-white" />
+          {/* Logo 圖示 - MW 字樣模擬 */}
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-brand-primary-700 to-brand-primary-400 rounded-2xl shadow-brand-lg mb-4">
+            <span className="text-white font-bold text-2xl tracking-wider">MW</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Mommy Wisdom</h1>
-          <p className="text-gray-500 mt-1">企業會計管理系統</p>
+          <h1 className="text-2xl font-bold text-brand-primary-700">智慧媽咪</h1>
+          <p className="text-brand-primary-400 mt-1">Mommy Wisdom 商業管理系統</p>
         </div>
 
         {/* Login/Register Card */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">
-            {mode === 'login' ? '登入您的帳號' : '建立新帳號'}
-          </h2>
+        <div className="bg-white rounded-2xl shadow-brand-lg border border-brand-primary-100 p-8">
+          {/* Tab Switcher */}
+          <div className="flex mb-6 bg-brand-primary-50 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setMode('login')}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
+                mode === 'login'
+                  ? 'bg-white text-brand-primary-700 shadow-sm'
+                  : 'text-brand-primary-400 hover:text-brand-primary-600'
+              }`}
+            >
+              登入
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('register')}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
+                mode === 'register'
+                  ? 'bg-white text-brand-primary-700 shadow-sm'
+                  : 'text-brand-primary-400 hover:text-brand-primary-600'
+              }`}
+            >
+              註冊
+            </button>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name (Register only) */}
             {mode === 'register' && (
-              <div>
+              <div className="animate-fade-in">
                 <label className="input-label">姓名</label>
                 <input
                   type="text"
@@ -129,26 +152,26 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-primary-300 hover:text-brand-primary-600 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
               {mode === 'register' && (
-                <p className="text-xs text-gray-500 mt-1">密碼至少 6 個字元</p>
+                <p className="text-xs text-brand-primary-400 mt-1">密碼至少 6 個字元</p>
               )}
             </div>
 
             {/* Error Message */}
             {(error || localError) && (
-              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm border border-red-200">
                 {error || localError}
               </div>
             )}
 
             {/* Success Message */}
             {successMessage && (
-              <div className="bg-green-50 text-green-600 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-green-50 text-green-600 px-4 py-3 rounded-lg text-sm border border-green-200">
                 {successMessage}
               </div>
             )}
@@ -178,10 +201,10 @@ export default function LoginPage() {
           {/* Divider */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
+              <div className="w-full border-t border-brand-primary-100"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">或</span>
+              <span className="px-2 bg-white text-brand-primary-400">或</span>
             </div>
           </div>
 
@@ -199,7 +222,7 @@ export default function LoginPage() {
                 setLocalError(error.message);
               }
             }}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-brand-primary-200 rounded-xl hover:bg-brand-primary-50 transition-colors"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -209,28 +232,13 @@ export default function LoginPage() {
             </svg>
             <span className="text-gray-700 font-medium">使用 Google 登入</span>
           </button>
-
-          {/* Toggle Mode */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              {mode === 'login' ? '還沒有帳號？' : '已經有帳號？'}
-              <button
-                onClick={() => {
-                  setMode(mode === 'login' ? 'register' : 'login');
-                  setLocalError('');
-                  setSuccessMessage('');
-                }}
-                className="text-blue-600 hover:text-blue-700 font-medium ml-1"
-              >
-                {mode === 'login' ? '立即註冊' : '返回登入'}
-              </button>
-            </p>
-          </div>
         </div>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-400 mt-8">
-          © 2025 Mommy Wisdom International Co.
+        <p className="text-center text-sm text-brand-primary-400 mt-8">
+          © 2026 智慧媽咪國際有限公司
+          <br />
+          <span className="text-brand-primary-300">Mommy Wisdom International Co.</span>
         </p>
       </div>
     </div>

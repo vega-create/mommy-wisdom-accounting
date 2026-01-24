@@ -171,7 +171,7 @@ export default function JournalPage() {
       {/* 報表標題 */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border-none">
         <div className="p-6 border-b border-gray-200 text-center print:border-b-2 print:border-black">
-          <h2 className="text-xl font-bold">{currentCompany?.name}</h2>
+          <h2 className="text-xl font-bold">{company?.name}</h2>
           <h3 className="text-lg font-semibold mt-1">日 記 帳</h3>
           <p className="text-sm text-gray-600 mt-1">
             期間：{format(new Date(startDate), 'yyyy年MM月dd日', { locale: zhTW })} 至 {format(new Date(endDate), 'yyyy年MM月dd日', { locale: zhTW })}

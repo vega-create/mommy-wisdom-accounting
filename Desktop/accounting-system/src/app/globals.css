@@ -5,16 +5,24 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --primary: #2563eb;
+  
+  /* 智慧媽咪品牌色彩系統 */
+  --brand-primary: #A31621;      /* Logo 深酒紅 */
+  --brand-primary-light: #BF1730;
+  --brand-primary-dark: #931226;
+  --brand-secondary: #EF8997;    /* Logo 淺粉紅 */
+  --brand-accent: #FECDD3;       /* 極淺粉 */
+  
+  --primary: #A31621;
   --primary-foreground: #ffffff;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #374151;
-  --accent: #dbeafe;
-  --accent-foreground: #1e40af;
-  --muted: #f9fafb;
+  --secondary: #FEF2F2;
+  --secondary-foreground: #A31621;
+  --accent: #FEE2E2;
+  --accent-foreground: #931226;
+  --muted: #FFF5F5;
   --muted-foreground: #6b7280;
-  --border: #e5e7eb;
-  --ring: #3b82f6;
+  --border: #FECACA;
+  --ring: #A31621;
   --success: #10b981;
   --warning: #f59e0b;
   --error: #ef4444;
@@ -26,7 +34,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Brand themed */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -38,12 +46,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--brand-secondary);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: var(--brand-primary-light);
 }
 
 /* Card hover effects */
@@ -51,16 +59,16 @@ body {
   @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
 }
 
-/* Button styles */
+/* Button styles - Brand themed */
 .btn-primary {
-  @apply bg-blue-600 text-white px-4 py-2 rounded-lg font-medium 
-         hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+  @apply bg-brand-primary-700 text-white px-4 py-2 rounded-lg font-medium 
+         hover:bg-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-700 focus:ring-offset-2
          transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
 .btn-secondary {
-  @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium 
-         hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2
+  @apply bg-brand-primary-100 text-brand-primary-700 px-4 py-2 rounded-lg font-medium 
+         hover:bg-brand-primary-200 focus:outline-none focus:ring-2 focus:ring-brand-primary-400 focus:ring-offset-2
          transition-all duration-200;
 }
 
@@ -76,10 +84,16 @@ body {
          transition-all duration-200;
 }
 
-/* Input styles */
+.btn-outline {
+  @apply border-2 border-brand-primary-700 text-brand-primary-700 px-4 py-2 rounded-lg font-medium 
+         hover:bg-brand-primary-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary-700 focus:ring-offset-2
+         transition-all duration-200;
+}
+
+/* Input styles - Brand themed */
 .input-field {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg 
-         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+  @apply w-full px-3 py-2 border border-brand-primary-200 rounded-lg 
+         focus:outline-none focus:ring-2 focus:ring-brand-primary-700 focus:border-transparent
          transition-all duration-200;
 }
 
@@ -89,7 +103,7 @@ body {
 
 /* Table styles */
 .table-container {
-  @apply overflow-x-auto rounded-lg border border-gray-200;
+  @apply overflow-x-auto rounded-lg border border-brand-primary-100;
 }
 
 .data-table {
@@ -97,19 +111,19 @@ body {
 }
 
 .data-table thead {
-  @apply bg-gray-50 border-b border-gray-200;
+  @apply bg-brand-primary-50 border-b border-brand-primary-100;
 }
 
 .data-table th {
-  @apply px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider;
+  @apply px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase tracking-wider;
 }
 
 .data-table td {
-  @apply px-4 py-3 text-sm text-gray-700 border-b border-gray-100;
+  @apply px-4 py-3 text-sm text-gray-700 border-b border-brand-primary-50;
 }
 
 .data-table tbody tr:hover {
-  @apply bg-gray-50;
+  @apply bg-brand-primary-50;
 }
 
 /* Status badges */
@@ -130,26 +144,34 @@ body {
 }
 
 .badge-info {
-  @apply bg-blue-100 text-blue-800;
+  @apply bg-brand-primary-100 text-brand-primary-700;
 }
 
 .badge-gray {
   @apply bg-gray-100 text-gray-800;
 }
 
-/* Sidebar navigation */
+.badge-brand {
+  @apply bg-brand-primary-100 text-brand-primary-700;
+}
+
+/* Sidebar navigation - Brand themed */
 .nav-item {
   @apply flex items-center gap-3 px-3 py-2.5 text-gray-600 rounded-lg
-         hover:bg-gray-100 hover:text-gray-900 transition-all duration-200;
+         hover:bg-brand-primary-50 hover:text-brand-primary-700 transition-all duration-200;
 }
 
 .nav-item.active {
-  @apply bg-blue-50 text-blue-700 font-medium;
+  @apply bg-brand-primary-100 text-brand-primary-700 font-medium;
 }
 
 /* Stats card */
 .stats-card {
-  @apply bg-white rounded-xl p-5 border border-gray-200 card-hover;
+  @apply bg-white rounded-xl p-5 border border-brand-primary-100 card-hover;
+}
+
+.stats-card-brand {
+  @apply bg-gradient-to-br from-brand-primary-700 to-brand-primary-600 text-white rounded-xl p-5 card-hover;
 }
 
 .stats-value {
@@ -201,6 +223,19 @@ body {
 
 .number-negative {
   @apply text-red-600;
+}
+
+/* Brand specific components */
+.brand-header {
+  @apply bg-gradient-to-r from-brand-primary-700 via-brand-primary-600 to-brand-accent-DEFAULT;
+}
+
+.brand-card {
+  @apply bg-white border border-brand-primary-100 rounded-xl shadow-sm hover:shadow-brand transition-shadow duration-200;
+}
+
+.brand-link {
+  @apply text-brand-primary-700 hover:text-brand-primary-600 underline-offset-2 hover:underline transition-colors duration-200;
 }
 
 /* Print styles */

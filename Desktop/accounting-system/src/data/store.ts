@@ -773,6 +773,7 @@ export const useAccountingStore = create<AccountingStore>()(
           liability: 0,
           equity: 0,
           revenue: 0,
+          cost: 0,
           expense: 0
         };
         

@@ -37,16 +37,18 @@ export default function BalanceSheetPage() {
     approvedVouchers.forEach(voucher => {
       const items = voucherItems.filter(item => item.voucher_id === voucher.id);
       items.forEach(item => {
-        const account = defaultAccountCategories.find(a => a.code === item.account_id);
+        const accountId = item.account_id;
+        if (!accountId) return;
+        const account = defaultAccountCategories.find(a => a.code === accountId);
         if (!account) return;
 
-        const currentBalance = accountBalances.get(item.account_id) || 0;
+        const currentBalance = accountBalances.get(accountId) || 0;
         
         // 根據科目性質計算餘額
         if (['asset', 'cost', 'expense'].includes(account.type)) {
-          accountBalances.set(item.account_id, currentBalance + item.debit_amount - item.credit_amount);
+          accountBalances.set(accountId, currentBalance + item.debit_amount - item.credit_amount);
         } else {
-          accountBalances.set(item.account_id, currentBalance + item.credit_amount - item.debit_amount);
+          accountBalances.set(accountId, currentBalance + item.credit_amount - item.debit_amount);
         }
       });
     });

@@ -151,6 +151,7 @@ export function getAccountTypeName(type: AccountType): string {
     liability: '負債',
     equity: '權益',
     revenue: '收入',
+    cost: '成本',
     expense: '費用'
   };
   return names[type];
@@ -163,6 +164,7 @@ export function getAccountTypeColor(type: AccountType): string {
     liability: 'text-red-600 bg-red-50',
     equity: 'text-purple-600 bg-purple-50',
     revenue: 'text-green-600 bg-green-50',
+    cost: 'text-yellow-600 bg-yellow-50',
     expense: 'text-orange-600 bg-orange-50'
   };
   return colors[type];
