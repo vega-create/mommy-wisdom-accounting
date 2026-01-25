@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// GET - 取得該客戶上一筆請款單的成本設定
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const customerId = searchParams.get('customer_id');
     const companyId = searchParams.get('company_id');
@@ -17,7 +12,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '缺少參數' }, { status: 400 });
     }
 
-    // 查詢該客戶最近一筆有成本資訊的請款單
     const { data, error } = await supabase
       .from('acct_billing_requests')
       .select('cost_vendor_id, cost_vendor_name, cost_amount')
