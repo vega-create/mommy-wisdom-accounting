@@ -106,35 +106,35 @@ interface DataState {
   transactions: Transaction[];
   vouchers: Voucher[];
   voucherItems: VoucherItem[];
-  
+
   // Loading states
   isLoading: boolean;
-  
+
   // Actions
   loadAll: () => Promise<void>;
-  
+
   // Bank Accounts
   loadBankAccounts: () => Promise<void>;
   addBankAccount: (data: Omit<BankAccount, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Promise<BankAccount | null>;
   updateBankAccount: (id: string, data: Partial<BankAccount>) => Promise<void>;
   deleteBankAccount: (id: string) => Promise<void>;
-  
+
   // Customers
   loadCustomers: () => Promise<void>;
   addCustomer: (data: Omit<Customer, 'id' | 'company_id' | 'created_at' | 'updated_at'>) => Promise<Customer | null>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
-  
+
   // Account Categories
   loadAccountCategories: () => Promise<void>;
   addAccountCategory: (data: Omit<AccountCategory, 'id' | 'company_id' | 'created_at'>) => Promise<AccountCategory | null>;
-  
+
   // Transactions
   loadTransactions: () => Promise<void>;
   addTransaction: (data: Omit<Transaction, 'id' | 'company_id' | 'created_by' | 'created_at' | 'updated_at'>) => Promise<Transaction | null>;
   updateTransaction: (id: string, data: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
-  
+
   // Vouchers
   loadVouchers: () => Promise<void>;
   addVoucher: (voucher: Omit<Voucher, 'id' | 'voucher_number' | 'company_id' | 'created_by' | 'created_at' | 'updated_at'>, items: Omit<VoucherItem, 'id' | 'voucher_id' | 'created_at'>[]) => Promise<Voucher | null>;
@@ -181,25 +181,11 @@ export const useDataStore = create<DataState>((set, get) => ({
 
   addBankAccount: async (data) => {
     const company = useAuthStore.getState().company;
-    const user = useAuthStore.getState().user;
-    if (!company || !user) return null;
+    if (!company) return null;
 
     const { data: newAccount, error } = await supabase
       .from('acct_bank_accounts')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...data,
         company_id: company.id,
       })
@@ -221,7 +207,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     if (!error) {
       set(state => ({
-        bankAccounts: state.bankAccounts.map(b => 
+        bankAccounts: state.bankAccounts.map(b =>
           b.id === id ? { ...b, ...data } : b
         )
       }));
@@ -262,19 +248,6 @@ export const useDataStore = create<DataState>((set, get) => ({
     const { data: newCustomer, error } = await supabase
       .from('acct_customers')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...data,
         company_id: company.id,
       })
@@ -296,7 +269,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     if (!error) {
       set(state => ({
-        customers: state.customers.map(c => 
+        customers: state.customers.map(c =>
           c.id === id ? { ...c, ...data } : c
         )
       }));
@@ -337,19 +310,6 @@ export const useDataStore = create<DataState>((set, get) => ({
     const { data: newCategory, error } = await supabase
       .from('acct_account_categories')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...data,
         company_id: company.id,
       })
@@ -382,23 +342,22 @@ export const useDataStore = create<DataState>((set, get) => ({
     const user = useAuthStore.getState().user;
     if (!company || !user) return null;
 
+    // 重要：清理空字串為 null，避免 UUID 欄位錯誤
     const { data: newTransaction, error } = await supabase
       .from('acct_transactions')
       .insert({
-        // 清理空字串為 null
+        transaction_date: data.transaction_date,
+        transaction_type: data.transaction_type,
+        description: data.description,
+        amount: data.amount,
         bank_account_id: data.bank_account_id || null,
         from_account_id: data.from_account_id || null,
         to_account_id: data.to_account_id || null,
         category_id: data.category_id || null,
         customer_id: data.customer_id || null,
         voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
         notes: data.notes || null,
         tags: data.tags || null,
-        ...data,
         company_id: company.id,
         created_by: user.id,
       })
@@ -407,7 +366,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     if (!error && newTransaction) {
       set(state => ({ transactions: [newTransaction, ...state.transactions] }));
-      
+
       // 更新帳戶餘額
       if (data.transaction_type === 'income' && data.bank_account_id) {
         const account = get().bankAccounts.find(b => b.id === data.bank_account_id);
@@ -437,7 +396,7 @@ export const useDataStore = create<DataState>((set, get) => ({
           });
         }
       }
-      
+
       return newTransaction;
     }
     return null;
@@ -451,7 +410,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     if (!error) {
       set(state => ({
-        transactions: state.transactions.map(t => 
+        transactions: state.transactions.map(t =>
           t.id === id ? { ...t, ...data } : t
         )
       }));
@@ -497,25 +456,12 @@ export const useDataStore = create<DataState>((set, get) => ({
       .select('*', { count: 'exact', head: true })
       .eq('company_id', company.id)
       .like('voucher_number', `${year}-%`);
-    
+
     const voucherNumber = `${year}-${String((count || 0) + 1).padStart(4, '0')}`;
 
     const { data: newVoucher, error } = await supabase
       .from('acct_vouchers')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...voucherData,
         voucher_number: voucherNumber,
         company_id: company.id,
@@ -548,7 +494,7 @@ export const useDataStore = create<DataState>((set, get) => ({
 
     if (!error) {
       set(state => ({
-        vouchers: state.vouchers.map(v => 
+        vouchers: state.vouchers.map(v =>
           v.id === id ? { ...v, ...data } : v
         )
       }));
