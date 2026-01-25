@@ -26,8 +26,164 @@ import {
   ChevronUp,
   Copy,
   ExternalLink,
+  Package,
 } from 'lucide-react';
 
+// ============================================
+// 品項選擇器元件
+// ============================================
+function ProductSelector({
+  companyId,
+  value,
+  unit,
+  price,
+  onSelect,
+}: {
+  companyId: string;
+  value: string;
+  unit: string;
+  price: number;
+  onSelect: (product: { name: string; unit: string; price: number }) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState(value);
+  const [products, setProducts] = useState<any[]>([]);
+  const [showSaveHint, setShowSaveHint] = useState(false);
+
+  useEffect(() => {
+    if (companyId) loadProducts();
+  }, [companyId]);
+
+  useEffect(() => {
+    setSearch(value);
+  }, [value]);
+
+  const loadProducts = async () => {
+    try {
+      const response = await fetch(`/api/invoice-products?company_id=${companyId}`);
+      const result = await response.json();
+      if (result.success) setProducts(result.data || []);
+    } catch (error) {
+      console.error('Load products error:', error);
+    }
+  };
+
+  const filteredProducts = products.filter((p: any) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const isNewProduct = search.trim() && !products.some((p: any) => p.name === search.trim());
+
+  const handleSelect = (product: any) => {
+    setSearch(product.name);
+    onSelect({
+      name: product.name,
+      unit: product.unit,
+      price: product.default_price || 0,
+    });
+    setIsOpen(false);
+
+    // 更新使用次數
+    fetch('/api/invoice-products', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: product.id }),
+    });
+  };
+
+  const handleSaveNew = async () => {
+    if (!search.trim()) return;
+    try {
+      await fetch('/api/invoice-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: companyId,
+          name: search.trim(),
+          unit: unit,
+          default_price: price || null,
+        }),
+      });
+      setShowSaveHint(true);
+      setTimeout(() => setShowSaveHint(false), 2000);
+      loadProducts();
+    } catch (error) {
+      console.error('Save product error:', error);
+    }
+  };
+
+  return (
+    <div className="relative flex-1">
+      <div className="relative">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            onSelect({ name: e.target.value, unit, price });
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+          placeholder="輸入或選擇品項"
+          className="input-field w-full"
+        />
+        {products.length > 0 && (
+          <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        )}
+      </div>
+
+      {showSaveHint && (
+        <div className="absolute right-0 top-full mt-1 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg z-50">
+          ✓ 已儲存
+        </div>
+      )}
+
+      {isOpen && (filteredProducts.length > 0 || isNewProduct) && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+          {filteredProducts.length > 0 && (
+            <div className="py-1">
+              <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 font-medium">常用品項</div>
+              {filteredProducts.map((product: any) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onMouseDown={() => handleSelect(product)}
+                  className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center justify-between text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <Package className="w-3 h-3 text-gray-400" />
+                    <span>{product.name}</span>
+                    <span className="text-xs text-gray-400">({product.unit})</span>
+                  </div>
+                  {product.default_price && (
+                    <span className="text-xs text-gray-500">${product.default_price.toLocaleString()}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {isNewProduct && (
+            <div className="border-t">
+              <button
+                type="button"
+                onMouseDown={handleSaveNew}
+                className="w-full px-3 py-2 text-left hover:bg-blue-50 text-blue-600 text-sm flex items-center gap-2"
+              >
+                <Plus className="w-3 h-3" />
+                儲存「{search}」為常用品項
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// 主頁面
+// ============================================
 interface Invoice {
   id: string;
   invoice_number: string | null;
@@ -221,7 +377,7 @@ export default function InvoicesPage() {
         const billing = result.data[0];
         // 從客戶資料填入
         const customer = customers.find(c => c.id === billing.customer_id);
-        
+
         setForm(prev => ({
           ...prev,
           billing_request_id: billingId,
@@ -283,8 +439,23 @@ export default function InvoicesPage() {
   const updateItem = (index: number, field: string, value: string | number) => {
     setForm(prev => ({
       ...prev,
-      items: prev.items.map((item, i) => 
+      items: prev.items.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  // 品項選擇器回調 - 更新整個品項
+  const handleProductSelect = (index: number, product: { name: string; unit: string; price: number }) => {
+    setForm(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index ? {
+          ...item,
+          name: product.name,
+          unit: product.unit,
+          price: product.price
+        } : item
       ),
     }));
   };
@@ -335,7 +506,7 @@ export default function InvoicesPage() {
         setShowModal(false);
         loadInvoices();
         alert(result.message || '發票已開立');
-        
+
         // 重置表單
         resetForm();
       } else {
@@ -525,7 +696,7 @@ export default function InvoicesPage() {
   // 統計資料
   const stats = useMemo(() => {
     const thisMonth = new Date().toISOString().slice(0, 7);
-    const monthInvoices = invoices.filter(inv => 
+    const monthInvoices = invoices.filter(inv =>
       inv.invoice_date.startsWith(thisMonth) && inv.status === 'issued'
     );
 
@@ -743,9 +914,8 @@ export default function InvoicesPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                      invoice.invoice_type === 'B2B' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                    }`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${invoice.invoice_type === 'B2B' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                      }`}>
                       {invoice.invoice_type === 'B2B' ? <Building2 className="w-3 h-3" /> : <User className="w-3 h-3" />}
                       {invoice.invoice_type}
                     </span>
@@ -835,11 +1005,10 @@ export default function InvoicesPage() {
                   <button
                     type="button"
                     onClick={() => setForm(prev => ({ ...prev, invoice_type: 'B2B' }))}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      form.invoice_type === 'B2B'
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${form.invoice_type === 'B2B'
                         ? 'border-brand-primary-500 bg-brand-primary-50'
                         : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       <Building2 className="w-5 h-5" />
@@ -850,11 +1019,10 @@ export default function InvoicesPage() {
                   <button
                     type="button"
                     onClick={() => setForm(prev => ({ ...prev, invoice_type: 'B2C' }))}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      form.invoice_type === 'B2C'
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${form.invoice_type === 'B2C'
                         ? 'border-brand-primary-500 bg-brand-primary-50'
                         : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       <User className="w-5 h-5" />
@@ -975,58 +1143,86 @@ export default function InvoicesPage() {
                 </div>
               )}
 
-              {/* 發票品項 */}
+              {/* 發票品項 - 使用品項選擇器 */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-gray-700">發票品項</label>
                   <button
                     type="button"
                     onClick={addItem}
-                    className="text-sm text-brand-primary-600 hover:text-brand-primary-700"
+                    className="text-sm text-brand-primary-600 hover:text-brand-primary-700 flex items-center gap-1"
                   >
-                    + 新增品項
+                    <Plus className="w-4 h-4" />
+                    新增品項
                   </button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {form.items.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={item.name}
-                        onChange={e => updateItem(index, 'name', e.target.value)}
-                        className="input-field flex-1"
-                        placeholder="品名"
-                      />
-                      <input
-                        type="number"
-                        value={item.quantity}
-                        onChange={e => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        className="input-field w-20 text-center"
-                        min="1"
-                      />
-                      <input
-                        type="text"
-                        value={item.unit}
-                        onChange={e => updateItem(index, 'unit', e.target.value)}
-                        className="input-field w-16 text-center"
-                        placeholder="單位"
-                      />
-                      <input
-                        type="number"
-                        value={item.price}
-                        onChange={e => updateItem(index, 'price', parseInt(e.target.value) || 0)}
-                        className="input-field w-28 text-right"
-                        placeholder="單價"
-                      />
-                      {form.items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
+                    <div key={index} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                      {/* 品項名稱 - 使用選擇器 */}
+                      <div className="flex items-center gap-2">
+                        <ProductSelector
+                          companyId={company?.id || ''}
+                          value={item.name}
+                          unit={item.unit}
+                          price={item.price}
+                          onSelect={(product) => handleProductSelect(index, product)}
+                        />
+                        {form.items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeItem(index)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      {/* 數量、單位、單價 */}
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">數量</label>
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={e => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
+                            className="input-field text-center"
+                            min="1"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">單位</label>
+                          <select
+                            value={item.unit}
+                            onChange={e => updateItem(index, 'unit', e.target.value)}
+                            className="input-field"
+                          >
+                            <option value="式">式</option>
+                            <option value="月">月</option>
+                            <option value="次">次</option>
+                            <option value="件">件</option>
+                            <option value="個">個</option>
+                            <option value="組">組</option>
+                            <option value="套">套</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">單價</label>
+                          <input
+                            type="number"
+                            value={item.price}
+                            onChange={e => updateItem(index, 'price', parseInt(e.target.value) || 0)}
+                            className="input-field text-right"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">小計</label>
+                          <div className="input-field bg-gray-100 text-right font-medium">
+                            {(item.price * item.quantity).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1103,9 +1299,9 @@ export default function InvoicesPage() {
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
                 <p className="font-medium mb-1">設定說明</p>
                 <p>請至 ezPay 電子發票平台取得 API 金鑰</p>
-                <a 
-                  href="https://inv.ezpay.com.tw" 
-                  target="_blank" 
+                <a
+                  href="https://inv.ezpay.com.tw"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 underline flex items-center gap-1 mt-1"
                 >
@@ -1232,12 +1428,12 @@ export default function InvoicesPage() {
             </div>
 
             <div className="border-t px-6 py-4 flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setShowVoidModal(false);
                   setSelectedInvoice(null);
                   setVoidReason('');
-                }} 
+                }}
                 className="btn-secondary"
               >
                 取消
