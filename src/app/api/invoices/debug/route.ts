@@ -3,8 +3,8 @@ import crypto from 'crypto';
 
 export async function GET() {
   const merchantId = '347148408';
-  const hashKey = 'vwhgNY7Roo7IgpITd7FcXy8g0t3QwEuL';
-  const hashIV = 'Pb7Pegcr7o4sOXKC';
+  const hashKey = 'UvgbjdNGkrjMqvoLZFtw01RyjsVcfYE3';
+  const hashIV = 'PIzC1cJRX31RzIBC';
 
   const timestamp = Math.floor(Date.now() / 1000);
 
