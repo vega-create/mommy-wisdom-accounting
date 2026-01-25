@@ -27,54 +27,46 @@ export interface EzPayConfig {
 
 // 發票項目介面
 export interface InvoiceItem {
-  name: string;      // 品名
-  count: number;     // 數量
-  unit: string;      // 單位
-  price: number;     // 單價
-  amount: number;    // 金額 (price * count)
-  taxType?: '1' | '2' | '3'; // 1:應稅, 2:零稅率, 3:免稅
+  name: string;
+  count: number;
+  unit: string;
+  price: number;
+  amount: number;
+  taxType?: '1' | '2' | '3';
 }
 
 // 開立發票參數
 export interface IssueInvoiceParams {
-  orderNumber: string;        // 訂單編號
-  invoiceType: 'B2B' | 'B2C'; // 發票類型
-
-  // 買受人資訊
+  orderNumber: string;
+  invoiceType: 'B2B' | 'B2C';
   buyerName: string;
-  buyerTaxId?: string;        // 統編 (B2B 必填)
+  buyerTaxId?: string;
   buyerEmail?: string;
   buyerPhone?: string;
   buyerAddress?: string;
-
-  // 載具 (B2C)
-  carrierType?: '' | '0' | '1' | '2'; // 空:無, 0:手機條碼, 1:自然人憑證, 2:ezPay載具
+  carrierType?: '' | '0' | '1' | '2';
   carrierNum?: string;
-
-  // 捐贈
-  loveCode?: string;          // 愛心碼
-
-  // 發票內容
+  loveCode?: string;
   items: InvoiceItem[];
-  taxType?: '1' | '2' | '3';  // 1:應稅, 2:零稅率, 3:免稅
-  comment?: string;           // 備註
+  taxType?: '1' | '2' | '3';
+  comment?: string;
 }
 
 // 開立發票回傳
 export interface IssueInvoiceResult {
   success: boolean;
-  invoiceNumber?: string;     // 發票號碼
-  invoiceDate?: string;       // 開票日期
-  randomNum?: string;         // 隨機碼
-  transNum?: string;          // ezPay 交易序號
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  randomNum?: string;
+  transNum?: string;
   message?: string;
   rawResponse?: any;
 }
 
 // 作廢發票參數
 export interface InvalidInvoiceParams {
-  invoiceNumber: string;      // 發票號碼
-  invalidReason: string;      // 作廢原因
+  invoiceNumber: string;
+  invalidReason: string;
 }
 
 // AES 加密
@@ -103,10 +95,10 @@ function aesDecrypt(data: string, key: string, iv: string): string {
   return decrypted;
 }
 
-// 組建交易資料字串
+// 組建交易資料字串 - 不做 URL 編碼
 function buildPostDataString(params: Record<string, string | number>): string {
   return Object.entries(params)
-    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+    .map(([key, value]) => `${key}=${String(value)}`)
     .join('&');
 }
 
@@ -120,32 +112,25 @@ export async function issueInvoice(
   const urls = config.isProduction ? EZPAY_URLS.production : EZPAY_URLS.test;
   const timestamp = Math.floor(Date.now() / 1000);
 
-  // 計算金額
   const taxType = params.taxType || '1';
   const taxRate = taxType === '1' ? 0.05 : 0;
-
-  // 計算總金額（含稅）
   const totalAmount = params.items.reduce((sum, item) => sum + item.amount, 0);
-
-  // 計算未稅金額和稅額
   const salesAmount = Math.round(totalAmount / (1 + taxRate));
   const taxAmount = totalAmount - salesAmount;
 
-  // 建立品項字串（用 | 分隔）
   const itemName = params.items.map(i => i.name).join('|');
   const itemCount = params.items.map(i => i.count).join('|');
   const itemUnit = params.items.map(i => i.unit || '式').join('|');
   const itemPrice = params.items.map(i => i.price).join('|');
   const itemAmount = params.items.map(i => i.amount).join('|');
 
-  // 組建交易資料
   const postData: Record<string, string | number> = {
     RespondType: 'JSON',
     Version: '1.5',
     TimeStamp: timestamp,
     TransNum: '',
     MerchantOrderNo: params.orderNumber,
-    Status: '1', // 1:立即開立
+    Status: '1',
     CreateStatusTime: '',
     Category: params.invoiceType,
     BuyerName: params.buyerName,
@@ -170,11 +155,9 @@ export async function issueInvoice(
     Comment: params.comment || '',
   };
 
-  // 加密
   const postDataString = buildPostDataString(postData);
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
 
-  // 發送請求
   try {
     const formData = new URLSearchParams({
       MerchantID_: config.merchantId,
@@ -193,7 +176,6 @@ export async function issueInvoice(
     console.log('ezPay issue response:', result);
 
     if (result.Status === 'SUCCESS') {
-      // 解密回傳資料
       const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
       const invoiceData = JSON.parse(decryptedData);
 
@@ -294,7 +276,7 @@ export async function searchInvoice(
   params: {
     invoiceNumber?: string;
     orderNumber?: string;
-    startDate?: string; // YYYY-MM-DD
+    startDate?: string;
     endDate?: string;
   }
 ): Promise<{
@@ -310,7 +292,7 @@ export async function searchInvoice(
     RespondType: 'JSON',
     Version: '1.3',
     TimeStamp: timestamp,
-    SearchType: params.invoiceNumber ? '0' : '1', // 0:發票號碼, 1:商店訂單編號
+    SearchType: params.invoiceNumber ? '0' : '1',
     InvoiceNumber: params.invoiceNumber || '',
     MerchantOrderNo: params.orderNumber || '',
     TotalAmt: 0,
