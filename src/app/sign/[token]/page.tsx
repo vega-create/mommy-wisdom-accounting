@@ -4,15 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import {
   FileCheck,
-  Building2,
   User,
-  Calendar,
-  DollarSign,
   Check,
   AlertCircle,
   Loader2,
   RefreshCw,
   Info,
+  Upload,
+  Camera,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface ReportData {
@@ -34,6 +35,9 @@ interface ReportData {
   status: string;
   bank_code?: string;
   bank_account?: string;
+  id_card_front?: string;
+  id_card_back?: string;
+  passbook_image?: string;
 }
 
 export default function SignPage() {
@@ -51,6 +55,11 @@ export default function SignPage() {
   const [bankCode, setBankCode] = useState('');
   const [bankAccount, setBankAccount] = useState('');
   const [agreed, setAgreed] = useState(false);
+  
+  // 文件上傳
+  const [idCardFront, setIdCardFront] = useState<string | null>(null);
+  const [idCardBack, setIdCardBack] = useState<string | null>(null);
+  const [passbookImage, setPassbookImage] = useState<string | null>(null);
   
   // 簽名畫布
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,6 +80,9 @@ export default function SignPage() {
           setIdNumber(json.data.id_number || '');
           setBankCode(json.data.bank_code || '');
           setBankAccount(json.data.bank_account || '');
+          setIdCardFront(json.data.id_card_front || null);
+          setIdCardBack(json.data.id_card_back || null);
+          setPassbookImage(json.data.passbook_image || null);
         }
       } catch (err) {
         setError('載入資料失敗，請稍後再試');
@@ -90,7 +102,6 @@ export default function SignPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 設定畫布尺寸
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -108,7 +119,30 @@ export default function SignPage() {
     return () => window.removeEventListener('resize', resizeCanvas);
   }, [report]);
 
-  // 取得座標
+  // 處理文件上傳
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setImage: (url: string | null) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 檢查檔案大小（最大 5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      alert('檔案大小不能超過 5MB');
+      return;
+    }
+
+    // 轉換為 base64
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setImage(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 簽名相關函數
   const getCoordinates = (e: React.TouchEvent | React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -128,7 +162,6 @@ export default function SignPage() {
     };
   };
 
-  // 開始繪製
   const startDrawing = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
     const canvas = canvasRef.current;
@@ -141,7 +174,6 @@ export default function SignPage() {
     setIsDrawing(true);
   };
 
-  // 繪製中
   const draw = (e: React.TouchEvent | React.MouseEvent) => {
     if (!isDrawing) return;
     e.preventDefault();
@@ -156,12 +188,10 @@ export default function SignPage() {
     setHasSignature(true);
   };
 
-  // 結束繪製
   const stopDrawing = () => {
     setIsDrawing(false);
   };
 
-  // 清除簽名
   const clearSignature = () => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -171,7 +201,6 @@ export default function SignPage() {
     setHasSignature(false);
   };
 
-  // 取得簽名圖片
   const getSignatureImage = (): string | null => {
     const canvas = canvasRef.current;
     if (!canvas || !hasSignature) return null;
@@ -187,6 +216,11 @@ export default function SignPage() {
 
     if (!hasSignature) {
       alert('請先簽名');
+      return;
+    }
+
+    if (!idNumber) {
+      alert('請填寫身分證字號');
       return;
     }
 
@@ -206,6 +240,9 @@ export default function SignPage() {
           bank_code: bankCode,
           bank_account: bankAccount,
           signature_image: signatureImage,
+          id_card_front: idCardFront,
+          id_card_back: idCardBack,
+          passbook_image: passbookImage,
         }),
       });
 
@@ -223,7 +260,6 @@ export default function SignPage() {
     }
   };
 
-  // 格式化金額
   const formatAmount = (amount: number) => new Intl.NumberFormat('zh-TW').format(amount);
 
   // 載入中
@@ -280,11 +316,51 @@ export default function SignPage() {
     );
   }
 
+  // 文件上傳元件
+  const FileUploadBox = ({ 
+    label, 
+    value, 
+    onChange, 
+    onClear 
+  }: { 
+    label: string; 
+    value: string | null; 
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onClear: () => void;
+  }) => (
+    <div className="flex-1">
+      <p className="text-sm text-gray-600 mb-2">{label}</p>
+      {value ? (
+        <div className="relative">
+          <img src={value} alt={label} className="w-full h-24 object-cover rounded-lg border" />
+          <button
+            onClick={onClear}
+            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-red-400 transition-colors">
+          <Camera className="w-6 h-6 text-gray-400 mb-1" />
+          <span className="text-xs text-gray-400">點擊上傳</span>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={onChange}
+          />
+        </label>
+      )}
+    </div>
+  );
+
   // 主要簽署頁面
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-red-700 to-red-600 text-white py-6 px-4">
+      <header className="bg-gradient-to-r from-red-700 to-red-600 text-white py-6 px-4 sticky top-0 z-10">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <FileCheck className="w-8 h-8" />
@@ -357,6 +433,41 @@ export default function SignPage() {
           </div>
         </div>
 
+        {/* 身分驗證文件 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Upload className="w-5 h-5 text-gray-400" />
+            身分驗證文件
+            <span className="text-xs text-gray-400 font-normal">（首次需上傳）</span>
+          </h2>
+
+          <div className="flex gap-3">
+            <FileUploadBox
+              label="身分證正面"
+              value={idCardFront}
+              onChange={(e) => handleFileUpload(e, setIdCardFront)}
+              onClear={() => setIdCardFront(null)}
+            />
+            <FileUploadBox
+              label="身分證反面"
+              value={idCardBack}
+              onChange={(e) => handleFileUpload(e, setIdCardBack)}
+              onClear={() => setIdCardBack(null)}
+            />
+          </div>
+
+          <FileUploadBox
+            label="銀行存摺封面"
+            value={passbookImage}
+            onChange={(e) => handleFileUpload(e, setPassbookImage)}
+            onClear={() => setPassbookImage(null)}
+          />
+
+          <p className="text-xs text-gray-400">
+            上傳的文件僅供身分核驗使用，將會安全保存
+          </p>
+        </div>
+
         {/* 填寫資料 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -365,7 +476,9 @@ export default function SignPage() {
           </h2>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">身分證字號</label>
+            <label className="block text-sm text-gray-600 mb-1">
+              身分證字號 <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               value={idNumber}
@@ -404,7 +517,7 @@ export default function SignPage() {
         {/* 簽名區 */}
         <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">手寫簽名</h2>
+            <h2 className="font-semibold text-gray-900">手寫簽名 <span className="text-red-500">*</span></h2>
             <button
               onClick={clearSignature}
               className="text-sm text-red-600 flex items-center gap-1"
@@ -418,7 +531,7 @@ export default function SignPage() {
             <canvas
               ref={canvasRef}
               className="w-full touch-none cursor-crosshair"
-              style={{ height: '200px' }}
+              style={{ height: '180px' }}
               onMouseDown={startDrawing}
               onMouseMove={draw}
               onMouseUp={stopDrawing}
@@ -452,7 +565,7 @@ export default function SignPage() {
         {/* 提交按鈕 */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !agreed || !hasSignature}
+          disabled={submitting || !agreed || !hasSignature || !idNumber}
           className="w-full bg-gradient-to-r from-red-700 to-red-600 text-white py-4 rounded-2xl font-semibold text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {submitting ? (
@@ -468,7 +581,6 @@ export default function SignPage() {
           )}
         </button>
 
-        {/* 提示 */}
         <p className="text-center text-xs text-gray-400">
           簽署完成後，款項將於確認後匯入您的帳戶
         </p>

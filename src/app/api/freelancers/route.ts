@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
-    const activeOnly = searchParams.get('active_only') !== 'false';
     const search = searchParams.get('search');
+    const activeOnly = searchParams.get('active') !== 'false';
 
     if (!companyId) {
       return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
@@ -24,31 +24,29 @@ export async function GET(request: NextRequest) {
       .from('acct_freelancers')
       .select('*')
       .eq('company_id', companyId)
-      .order('name');
+      .order('name', { ascending: true });
 
     if (activeOnly) {
       query = query.eq('is_active', true);
     }
 
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,id_number.ilike.%${search}%,phone.ilike.%${search}%`);
-    }
-
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database error:', error);
+      throw error;
+    }
 
-    // 取得每位人員的勞報統計
+    // 計算每位人員的統計資料
     const freelancersWithStats = await Promise.all(
       (data || []).map(async (freelancer) => {
-        const { data: stats } = await supabase
+        const { data: reports } = await supabase
           .from('acct_labor_reports')
-          .select('net_amount')
-          .eq('freelancer_id', freelancer.id)
-          .in('status', ['signed', 'paid']);
+          .select('gross_amount')
+          .eq('freelancer_id', freelancer.id);
 
-        const totalReports = stats?.length || 0;
-        const totalAmount = stats?.reduce((sum, r) => sum + (r.net_amount || 0), 0) || 0;
+        const totalReports = reports?.length || 0;
+        const totalAmount = reports?.reduce((sum, r) => sum + (r.gross_amount || 0), 0) || 0;
 
         return {
           ...freelancer,
@@ -58,10 +56,21 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    return NextResponse.json({ data: freelancersWithStats });
+    // 搜尋過濾
+    let result = freelancersWithStats;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = freelancersWithStats.filter(f =>
+        f.name?.toLowerCase().includes(searchLower) ||
+        f.id_number?.toLowerCase().includes(searchLower) ||
+        f.phone?.includes(search)
+      );
+    }
+
+    return NextResponse.json({ data: result });
   } catch (error) {
     console.error('Error fetching freelancers:', error);
-    return NextResponse.json({ error: '取得外包人員失敗' }, { status: 500 });
+    return NextResponse.json({ error: '取得人員失敗' }, { status: 500 });
   }
 }
 
@@ -69,19 +78,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('Creating freelancer:', body);
+
     const {
       company_id,
       name,
+      english_name,
       id_number,
+      birthday,
       phone,
       email,
       address,
       line_user_id,
-      is_union_member = false,
+      line_display_name,
       bank_code,
       bank_name,
-      bank_branch,
       bank_account,
+      bank_account_name,
+      is_union_member = false,
       notes,
     } = body;
 
@@ -103,28 +117,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const insertData: Record<string, any> = {
+      company_id,
+      name,
+      is_active: true,
+    };
+
+    // 可選欄位
+    if (english_name) insertData.english_name = english_name;
+    if (id_number) insertData.id_number = id_number;
+    if (birthday) insertData.birthday = birthday;
+    if (phone) insertData.phone = phone;
+    if (email) insertData.email = email;
+    if (address) insertData.address = address;
+    if (line_user_id) insertData.line_user_id = line_user_id;
+    if (line_display_name) insertData.line_display_name = line_display_name;
+    if (bank_code) insertData.bank_code = bank_code;
+    if (bank_name) insertData.bank_name = bank_name;
+    if (bank_account) insertData.bank_account = bank_account;
+    if (bank_account_name) insertData.bank_account_name = bank_account_name;
+    if (notes) insertData.notes = notes;
+    insertData.is_union_member = is_union_member;
+
+    // 判斷資料是否完整
+    insertData.is_complete = !!(id_number && bank_code && bank_account);
+
     const { data, error } = await supabase
       .from('acct_freelancers')
-      .insert({
-        company_id,
-        name,
-        id_number: id_number || null,
-        phone: phone || null,
-        email: email || null,
-        address: address || null,
-        line_user_id: line_user_id || null,
-        is_union_member,
-        bank_code: bank_code || null,
-        bank_name: bank_name || null,
-        bank_branch: bank_branch || null,
-        bank_account: bank_account || null,
-        notes: notes || null,
-        is_active: true,
-      })
+      .insert(insertData)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database insert error:', error);
+      return NextResponse.json({ error: `新增失敗: ${error.message}` }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

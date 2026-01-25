@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
-    const type = searchParams.get('type'); // customer, vendor, both
-    const activeOnly = searchParams.get('active_only') !== 'false';
+    const customerType = searchParams.get('customer_type'); // customer, vendor, both
+    const search = searchParams.get('search');
 
     if (!companyId) {
       return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
@@ -24,25 +24,37 @@ export async function GET(request: NextRequest) {
       .from('acct_customers')
       .select('*')
       .eq('company_id', companyId)
-      .order('name');
+      .eq('is_active', true)
+      .order('name', { ascending: true });
 
-    if (activeOnly) {
-      query = query.eq('is_active', true);
-    }
-
-    if (type && type !== 'all') {
-      if (type === 'customer') {
+    if (customerType) {
+      if (customerType === 'customer') {
         query = query.in('customer_type', ['customer', 'both']);
-      } else if (type === 'vendor') {
+      } else if (customerType === 'vendor') {
         query = query.in('customer_type', ['vendor', 'both']);
       }
     }
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database error:', error);
+      throw error;
+    }
 
-    return NextResponse.json({ data: data || [] });
+    // 搜尋過濾
+    let result = data || [];
+    if (search) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(c =>
+        c.name?.toLowerCase().includes(searchLower) ||
+        c.short_name?.toLowerCase().includes(searchLower) ||
+        c.tax_id?.includes(search) ||
+        c.contact_person?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return NextResponse.json({ data: result });
   } catch (error) {
     console.error('Error fetching customers:', error);
     return NextResponse.json({ error: '取得客戶失敗' }, { status: 500 });
@@ -53,19 +65,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('Creating customer:', body);
+
     const {
       company_id,
       name,
       short_name,
       tax_id,
-      customer_type,
+      customer_type = 'customer',
       contact_person,
       phone,
       email,
       address,
       notes,
-      is_active,
-      // Phase 2 擴充欄位
+      // Phase 2 擴充
       line_user_id,
       line_display_name,
       line_group_id,
@@ -78,44 +91,76 @@ export async function POST(request: NextRequest) {
       line_notify_enabled,
       payment_terms,
       credit_limit,
+      // 外包人員連動
+      is_vendor,
+      sync_to_freelancer,
     } = body;
 
     if (!company_id || !name) {
-      return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
+      return NextResponse.json({ error: '缺少必要欄位 (company_id, name)' }, { status: 400 });
     }
+
+    const insertData: Record<string, any> = {
+      company_id,
+      name,
+      customer_type,
+      is_active: true,
+    };
+
+    // 可選欄位
+    if (short_name) insertData.short_name = short_name;
+    if (tax_id) insertData.tax_id = tax_id;
+    if (contact_person) insertData.contact_person = contact_person;
+    if (phone) insertData.phone = phone;
+    if (email) insertData.email = email;
+    if (address) insertData.address = address;
+    if (notes) insertData.notes = notes;
+    
+    // Phase 2 擴充
+    if (line_user_id) insertData.line_user_id = line_user_id;
+    if (line_display_name) insertData.line_display_name = line_display_name;
+    if (line_group_id) insertData.line_group_id = line_group_id;
+    if (line_group_name) insertData.line_group_name = line_group_name;
+    if (preferred_title) insertData.preferred_title = preferred_title;
+    if (vendor_type) insertData.vendor_type = vendor_type;
+    if (can_issue_invoice !== undefined) insertData.can_issue_invoice = can_issue_invoice;
+    if (billing_contact_name) insertData.billing_contact_name = billing_contact_name;
+    if (billing_email) insertData.billing_email = billing_email;
+    if (line_notify_enabled !== undefined) insertData.line_notify_enabled = line_notify_enabled;
+    if (payment_terms) insertData.payment_terms = payment_terms;
+    if (credit_limit) insertData.credit_limit = credit_limit;
+    if (is_vendor !== undefined) insertData.is_vendor = is_vendor;
 
     const { data, error } = await supabase
       .from('acct_customers')
-      .insert({
-        company_id,
-        name,
-        short_name: short_name || null,
-        tax_id: tax_id || null,
-        customer_type: customer_type || 'customer',
-        contact_person: contact_person || null,
-        phone: phone || null,
-        email: email || null,
-        address: address || null,
-        notes: notes || null,
-        is_active: is_active ?? true,
-        // Phase 2
-        line_user_id: line_user_id || null,
-        line_display_name: line_display_name || null,
-        line_group_id: line_group_id || null,
-        line_group_name: line_group_name || null,
-        preferred_title: preferred_title || null,
-        vendor_type: vendor_type || 'company',
-        can_issue_invoice: can_issue_invoice ?? true,
-        billing_contact_name: billing_contact_name || null,
-        billing_email: billing_email || null,
-        line_notify_enabled: line_notify_enabled ?? true,
-        payment_terms: payment_terms || 30,
-        credit_limit: credit_limit || 0,
-      })
+      .insert(insertData)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database insert error:', error);
+      return NextResponse.json({ error: `新增失敗: ${error.message}` }, { status: 500 });
+    }
+
+    // 如果是廠商（個人），同步建立外包人員
+    if (sync_to_freelancer && (customer_type === 'vendor' || customer_type === 'both') && vendor_type === 'individual') {
+      try {
+        await supabase.from('acct_freelancers').insert({
+          company_id,
+          name,
+          phone,
+          email,
+          address,
+          line_user_id,
+          line_display_name,
+          is_active: true,
+          // 關聯到客戶
+          customer_id: data.id,
+        });
+      } catch (freelancerError) {
+        console.error('Error syncing to freelancer:', freelancerError);
+      }
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -131,65 +176,31 @@ export async function PUT(request: NextRequest) {
     const id = searchParams.get('id');
     const body = await request.json();
 
+    console.log('Updating customer:', id, body);
+
     if (!id) {
       return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     }
 
-    const {
-      name,
-      short_name,
-      tax_id,
-      customer_type,
-      contact_person,
-      phone,
-      email,
-      address,
-      notes,
-      is_active,
-      // Phase 2
-      line_user_id,
-      line_display_name,
-      line_group_id,
-      line_group_name,
-      preferred_title,
-      vendor_type,
-      can_issue_invoice,
-      billing_contact_name,
-      billing_email,
-      line_notify_enabled,
-      payment_terms,
-      credit_limit,
-    } = body;
-
-    const updateData: Record<string, unknown> = {
+    const updateData: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
 
-    // 基本欄位
-    if (name !== undefined) updateData.name = name;
-    if (short_name !== undefined) updateData.short_name = short_name || null;
-    if (tax_id !== undefined) updateData.tax_id = tax_id || null;
-    if (customer_type !== undefined) updateData.customer_type = customer_type;
-    if (contact_person !== undefined) updateData.contact_person = contact_person || null;
-    if (phone !== undefined) updateData.phone = phone || null;
-    if (email !== undefined) updateData.email = email || null;
-    if (address !== undefined) updateData.address = address || null;
-    if (notes !== undefined) updateData.notes = notes || null;
-    if (is_active !== undefined) updateData.is_active = is_active;
+    // 允許更新的欄位
+    const allowedFields = [
+      'name', 'short_name', 'tax_id', 'customer_type', 'contact_person',
+      'phone', 'email', 'address', 'notes', 'is_active',
+      'line_user_id', 'line_display_name', 'line_group_id', 'line_group_name',
+      'preferred_title', 'vendor_type', 'can_issue_invoice',
+      'billing_contact_name', 'billing_email', 'line_notify_enabled',
+      'payment_terms', 'credit_limit', 'is_vendor',
+    ];
 
-    // Phase 2 擴充欄位
-    if (line_user_id !== undefined) updateData.line_user_id = line_user_id || null;
-    if (line_display_name !== undefined) updateData.line_display_name = line_display_name || null;
-    if (line_group_id !== undefined) updateData.line_group_id = line_group_id || null;
-    if (line_group_name !== undefined) updateData.line_group_name = line_group_name || null;
-    if (preferred_title !== undefined) updateData.preferred_title = preferred_title || null;
-    if (vendor_type !== undefined) updateData.vendor_type = vendor_type;
-    if (can_issue_invoice !== undefined) updateData.can_issue_invoice = can_issue_invoice;
-    if (billing_contact_name !== undefined) updateData.billing_contact_name = billing_contact_name || null;
-    if (billing_email !== undefined) updateData.billing_email = billing_email || null;
-    if (line_notify_enabled !== undefined) updateData.line_notify_enabled = line_notify_enabled;
-    if (payment_terms !== undefined) updateData.payment_terms = payment_terms;
-    if (credit_limit !== undefined) updateData.credit_limit = credit_limit;
+    allowedFields.forEach(field => {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field];
+      }
+    });
 
     const { data, error } = await supabase
       .from('acct_customers')
@@ -198,7 +209,10 @@ export async function PUT(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database update error:', error);
+      return NextResponse.json({ error: `更新失敗: ${error.message}` }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -219,7 +233,6 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (hard) {
-      // 硬刪除
       const { error } = await supabase
         .from('acct_customers')
         .delete()
@@ -227,7 +240,6 @@ export async function DELETE(request: NextRequest) {
 
       if (error) throw error;
     } else {
-      // 軟刪除
       const { error } = await supabase
         .from('acct_customers')
         .update({ is_active: false, updated_at: new Date().toISOString() })

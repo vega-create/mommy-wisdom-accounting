@@ -8,76 +8,89 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// GET - 取得單筆外包人員
+// GET - 取得單一人員
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
     const { data, error } = await supabase
       .from('acct_freelancers')
       .select('*')
-      .eq('id', id)
+      .eq('id', params.id)
       .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: '外包人員不存在' }, { status: 404 });
-      }
-      throw error;
-    }
+    if (error) throw error;
 
-    // 取得勞報統計
+    // 取得相關勞報單統計
     const { data: reports } = await supabase
       .from('acct_labor_reports')
-      .select('id, report_number, gross_amount, net_amount, status, created_at')
-      .eq('freelancer_id', id)
-      .order('created_at', { ascending: false });
+      .select('id, gross_amount, net_amount, status, created_at')
+      .eq('freelancer_id', params.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
 
-    const stats = {
-      total_reports: reports?.length || 0,
-      total_amount: reports?.reduce((sum, r) => sum + (r.net_amount || 0), 0) || 0,
-      recent_reports: reports?.slice(0, 5) || [],
-    };
+    const totalReports = reports?.length || 0;
+    const totalAmount = reports?.reduce((sum, r) => sum + (r.gross_amount || 0), 0) || 0;
 
-    return NextResponse.json({ data: { ...data, stats } });
+    return NextResponse.json({
+      data: {
+        ...data,
+        total_reports: totalReports,
+        total_amount: totalAmount,
+        recent_reports: reports || [],
+      }
+    });
   } catch (error) {
     console.error('Error fetching freelancer:', error);
-    return NextResponse.json({ error: '取得外包人員失敗' }, { status: 500 });
+    return NextResponse.json({ error: '取得人員失敗' }, { status: 500 });
   }
 }
 
-// PUT - 更新外包人員
+// PUT - 更新人員
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
     const body = await request.json();
 
+    const updateData: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    // 允許更新的欄位
     const allowedFields = [
-      'name', 'id_number', 'phone', 'email', 'address',
-      'line_user_id', 'is_union_member',
-      'bank_code', 'bank_name', 'bank_branch', 'bank_account',
-      'notes', 'is_active'
+      'name', 'english_name', 'id_number', 'birthday',
+      'phone', 'email', 'address',
+      'line_user_id', 'line_display_name',
+      'bank_code', 'bank_name', 'bank_account', 'bank_account_name',
+      'is_union_member', 'is_active', 'notes',
+      'id_card_front', 'id_card_back', 'passbook_image',
     ];
 
-    const updates: Record<string, any> = {};
-    for (const field of allowedFields) {
+    allowedFields.forEach(field => {
       if (body[field] !== undefined) {
-        updates[field] = body[field];
+        updateData[field] = body[field];
       }
-    }
+    });
 
-    updates.updated_at = new Date().toISOString();
+    // 判斷資料是否完整
+    const { data: current } = await supabase
+      .from('acct_freelancers')
+      .select('id_number, bank_code, bank_account')
+      .eq('id', params.id)
+      .single();
+
+    const idNumber = updateData.id_number ?? current?.id_number;
+    const bankCode = updateData.bank_code ?? current?.bank_code;
+    const bankAccount = updateData.bank_account ?? current?.bank_account;
+    updateData.is_complete = !!(idNumber && bankCode && bankAccount);
 
     const { data, error } = await supabase
       .from('acct_freelancers')
-      .update(updates)
-      .eq('id', id)
+      .update(updateData)
+      .eq('id', params.id)
       .select()
       .single();
 
@@ -86,51 +99,49 @@ export async function PUT(
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Error updating freelancer:', error);
-    return NextResponse.json({ error: '更新外包人員失敗' }, { status: 500 });
+    return NextResponse.json({ error: '更新人員失敗' }, { status: 500 });
   }
 }
 
-// DELETE - 刪除外包人員（軟刪除）
+// DELETE - 刪除人員
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
     // 檢查是否有關聯的勞報單
     const { data: reports } = await supabase
       .from('acct_labor_reports')
       .select('id')
-      .eq('freelancer_id', id)
+      .eq('freelancer_id', params.id)
       .limit(1);
 
     if (reports && reports.length > 0) {
       // 有關聯資料，改為停用
       const { error } = await supabase
         .from('acct_freelancers')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', id);
+        .update({ is_active: false })
+        .eq('id', params.id);
 
       if (error) throw error;
 
       return NextResponse.json({ 
         success: true, 
-        message: '已停用（有關聯勞報單，無法完全刪除）' 
+        message: '人員已停用（有關聯勞報單，無法刪除）' 
       });
     }
 
-    // 無關聯資料，可以刪除
+    // 無關聯資料，直接刪除
     const { error } = await supabase
       .from('acct_freelancers')
       .delete()
-      .eq('id', id);
+      .eq('id', params.id);
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: '人員已刪除' });
   } catch (error) {
     console.error('Error deleting freelancer:', error);
-    return NextResponse.json({ error: '刪除外包人員失敗' }, { status: 500 });
+    return NextResponse.json({ error: '刪除人員失敗' }, { status: 500 });
   }
 }

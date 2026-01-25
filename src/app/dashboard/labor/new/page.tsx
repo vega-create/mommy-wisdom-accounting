@@ -66,7 +66,19 @@ export default function NewLaborReportPage() {
   // 資料來源
   const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
   const [billingRequests, setBillingRequests] = useState<BillingRequest[]>([]);
-  const [lineTargets, setLineTargets] = useState<LineTarget[]>([]);
+
+  // LINE 發送設定
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [selectedLineTarget, setSelectedLineTarget] = useState<string>('');
+  const [signUrl, setSignUrl] = useState<string>('');
+  const [customMessage, setCustomMessage] = useState('');
+
+  // 從 freelancers 中有 LINE ID 的人員
+  const lineTargets = freelancers.filter(f => f.line_user_id).map(f => ({
+    id: f.line_user_id!,
+    name: f.name,
+    type: 'user' as const,
+  }));
 
   // 表單資料
   const [formData, setFormData] = useState({
@@ -93,12 +105,6 @@ export default function NewLaborReportPage() {
     net_amount: 0,
   });
 
-  // LINE 發送設定
-  const [showSendModal, setShowSendModal] = useState(false);
-  const [selectedLineTarget, setSelectedLineTarget] = useState<string>('');
-  const [signUrl, setSignUrl] = useState<string>('');
-  const [customMessage, setCustomMessage] = useState('');
-
   // 載入人員與請款單資料
   useEffect(() => {
     if (!company?.id) return;
@@ -117,21 +123,6 @@ export default function NewLaborReportPage() {
         if (json.data) setBillingRequests(json.data);
       })
       .catch(() => {}); // 可能還沒有這個 API
-
-    // 載入 LINE 聯絡人
-    fetch(`/api/line/contacts?company_id=${company.id}`)
-      .then(res => res.json())
-      .then(json => {
-        if (json.data) {
-          const targets: LineTarget[] = json.data.map((c: any) => ({
-            type: c.type || 'user',
-            id: c.line_user_id || c.line_group_id,
-            name: c.name || c.line_display_name,
-          }));
-          setLineTargets(targets);
-        }
-      })
-      .catch(() => {});
   }, [company?.id]);
 
   // 選擇人員時自動帶入資料
