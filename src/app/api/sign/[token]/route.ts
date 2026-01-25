@@ -30,16 +30,16 @@ export async function POST(request: NextRequest, { params }: { params: { token: 
   const supabase = await createClient();
   const token = params.token;
   const body = await request.json();
-  const { signature, signer_name, company_stamp } = body;
+  const { signature, signer_name } = body;
 
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
+  // 只更新存在的欄位
   const { data, error } = await supabase
     .from('acct_contracts')
     .update({
       customer_signature: signature,
       customer_signed_name: signer_name,
-      customer_stamp: company_stamp,
       customer_signed_at: new Date().toISOString(),
       customer_signed_ip: ip,
       status: 'signed',
@@ -50,7 +50,8 @@ export async function POST(request: NextRequest, { params }: { params: { token: 
     .single();
 
   if (error) {
-    return NextResponse.json({ error: '簽署失敗' }, { status: 500 });
+    console.error('Sign error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });
