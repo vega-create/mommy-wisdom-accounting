@@ -30,12 +30,19 @@ export default function QuotationEditPage() {
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
-    if (field === 'quantity' || field === 'unit_price') newItems[index].amount = newItems[index].quantity * newItems[index].unit_price;
+    if (field === 'quantity' || field === 'unit_price') {
+      newItems[index].amount = newItems[index].quantity * newItems[index].unit_price;
+    }
     setItems(newItems);
   };
 
+  const handleNumberChange = (index: number, field: string, value: string) => {
+    const num = value === '' ? 0 : parseInt(value, 10) || 0;
+    updateItem(index, field, num);
+  };
+
   const addItem = () => setItems([...items, { item_name: '', description: '', quantity: 1, unit: '式', unit_price: 0, amount: 0 }]);
-  const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
+  const removeItem = (index: number) => items.length > 1 && setItems(items.filter((_, i) => i !== index));
   const calcSubtotal = () => items.reduce((sum, i) => sum + (i.amount || 0), 0);
   const calcTax = () => form.tax_type === 'taxable' ? Math.round(calcSubtotal() * 0.05) : 0;
   const calcTotal = () => calcSubtotal() + calcTax();
@@ -77,19 +84,27 @@ export default function QuotationEditPage() {
           <h2 className="font-semibold">項目明細</h2>
           <button onClick={addItem} className="text-blue-600 hover:underline text-sm">+ 新增項目</button>
         </div>
+        <div className="grid grid-cols-12 gap-2 mb-2 text-sm text-gray-500">
+          <div className="col-span-4">項目名稱</div>
+          <div className="col-span-2">數量</div>
+          <div className="col-span-1">單位</div>
+          <div className="col-span-2">單價</div>
+          <div className="col-span-2 text-right">小計</div>
+          <div className="col-span-1"></div>
+        </div>
         {items.map((item, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 mb-2 items-center">
             <input placeholder="項目名稱" value={item.item_name} onChange={(e) => updateItem(i, 'item_name', e.target.value)} className="col-span-4 border rounded px-2 py-1" />
-            <input type="number" placeholder="數量" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="col-span-2 border rounded px-2 py-1" />
-            <input placeholder="單位" value={item.unit} onChange={(e) => updateItem(i, 'unit', e.target.value)} className="col-span-1 border rounded px-2 py-1" />
-            <input type="number" placeholder="單價" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', Number(e.target.value))} className="col-span-2 border rounded px-2 py-1" />
-            <div className="col-span-2 text-right">${item.amount?.toLocaleString()}</div>
-            <button onClick={() => removeItem(i)} className="col-span-1 text-red-500 hover:text-red-700">✕</button>
+            <input type="text" inputMode="numeric" value={item.quantity || ''} onChange={(e) => handleNumberChange(i, 'quantity', e.target.value)} className="col-span-2 border rounded px-2 py-1 text-right" />
+            <input value={item.unit} onChange={(e) => updateItem(i, 'unit', e.target.value)} className="col-span-1 border rounded px-2 py-1 text-center" />
+            <input type="text" inputMode="numeric" value={item.unit_price || ''} onChange={(e) => handleNumberChange(i, 'unit_price', e.target.value)} className="col-span-2 border rounded px-2 py-1 text-right" />
+            <div className="col-span-2 text-right font-medium">${(item.amount || 0).toLocaleString()}</div>
+            <button onClick={() => removeItem(i)} className="col-span-1 text-red-500 hover:text-red-700 text-center">✕</button>
           </div>
         ))}
-        <div className="border-t mt-4 pt-4 text-right">
-          <div>小計: ${calcSubtotal().toLocaleString()}</div>
-          <div>稅額 (5%): ${calcTax().toLocaleString()}</div>
+        <div className="border-t mt-4 pt-4 text-right space-y-1">
+          <div className="text-gray-600">小計: ${calcSubtotal().toLocaleString()}</div>
+          <div className="text-gray-600">稅額 (5%): ${calcTax().toLocaleString()}</div>
           <div className="text-xl font-bold text-red-600">總計: ${calcTotal().toLocaleString()}</div>
         </div>
       </div>
