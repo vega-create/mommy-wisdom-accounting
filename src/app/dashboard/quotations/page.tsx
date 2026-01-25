@@ -5,21 +5,12 @@ import { useCompany } from '@/lib/context/CompanyContext';
 import Link from 'next/link';
 
 const statusLabels: Record<string, string> = {
-  draft: '草稿',
-  sent: '已發送',
-  accepted: '已接受',
-  rejected: '已拒絕',
-  expired: '已過期',
-  converted: '已轉合約',
+  draft: '草稿', sent: '已發送', accepted: '已接受', rejected: '已拒絕', expired: '已過期', converted: '已轉合約',
 };
 
 const statusColors: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  sent: 'bg-blue-100 text-blue-700',
-  accepted: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  expired: 'bg-yellow-100 text-yellow-700',
-  converted: 'bg-purple-100 text-purple-700',
+  draft: 'bg-gray-100 text-gray-700', sent: 'bg-blue-100 text-blue-700', accepted: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700', expired: 'bg-yellow-100 text-yellow-700', converted: 'bg-purple-100 text-purple-700',
 };
 
 export default function QuotationsPage() {
@@ -28,14 +19,22 @@ export default function QuotationsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (currentCompany?.id) fetchQuotations();
+    if (currentCompany?.id) {
+      fetchQuotations();
+    } else {
+      setLoading(false);
+    }
   }, [currentCompany]);
 
   const fetchQuotations = async () => {
     setLoading(true);
-    const res = await fetch(`/api/quotations?company_id=${currentCompany?.id}`);
-    const data = await res.json();
-    setQuotations(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`/api/quotations?company_id=${currentCompany?.id}`);
+      const data = await res.json();
+      setQuotations(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+    }
     setLoading(false);
   };
 
@@ -56,6 +55,10 @@ export default function QuotationsPage() {
       alert(data.error || '轉換失敗');
     }
   };
+
+  if (!currentCompany) {
+    return <div className="p-6 text-center text-gray-500">請先選擇公司</div>;
+  }
 
   return (
     <div className="p-6">
@@ -92,9 +95,7 @@ export default function QuotationsPage() {
                   <td className="p-4">{q.title}</td>
                   <td className="p-4 text-right">${q.total_amount?.toLocaleString()}</td>
                   <td className="p-4 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs ${statusColors[q.status]}`}>
-                      {statusLabels[q.status]}
-                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs ${statusColors[q.status]}`}>{statusLabels[q.status]}</span>
                   </td>
                   <td className="p-4 text-center text-gray-500">{q.quotation_date}</td>
                   <td className="p-4 text-center">
