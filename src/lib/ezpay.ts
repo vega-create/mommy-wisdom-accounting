@@ -69,21 +69,31 @@ export interface InvalidInvoiceParams {
   invalidReason: string;
 }
 
-// 組建交易資料字串（不做編碼）
+// PHP http_build_query 風格的 URL 編碼（空格變 +）
+function phpUrlEncode(str: string): string {
+  return encodeURIComponent(str)
+    .replace(/%20/g, '+')
+    .replace(/!/g, '%21')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/\*/g, '%2A');
+}
+
+// 組建交易資料字串（模擬 PHP http_build_query）
 function buildPostDataString(params: Record<string, string | number>): string {
   return Object.entries(params)
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => `${key}=${phpUrlEncode(String(value))}`)
     .join('&');
 }
 
-// AES 加密
+// AES 加密（輸出 hex 格式）
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv(
     'aes-256-cbc',
     Buffer.from(key, 'utf8'),
     Buffer.from(iv, 'utf8')
   );
-  cipher.setAutoPadding(true);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return encrypted;
@@ -96,7 +106,6 @@ function aesDecrypt(data: string, key: string, iv: string): string {
     Buffer.from(key, 'utf8'),
     Buffer.from(iv, 'utf8')
   );
-  decipher.setAutoPadding(true);
   let decrypted = decipher.update(data, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
@@ -157,14 +166,19 @@ export async function issueInvoice(
 
   const postDataString = buildPostDataString(postData);
   console.log('ezPay PostData:', postDataString.substring(0, 500));
+  console.log('ezPay Key length:', config.hashKey.length, 'IV length:', config.hashIV.length);
 
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
+  console.log('ezPay Encrypted (first 100):', encryptedData.substring(0, 100));
 
   try {
     const formData = new URLSearchParams({
       MerchantID_: config.merchantId,
       PostData_: encryptedData,
     });
+
+    console.log('ezPay Request URL:', urls.issue);
+    console.log('ezPay MerchantID:', config.merchantId);
 
     const response = await fetch(urls.issue, {
       method: 'POST',
