@@ -69,7 +69,7 @@ export interface InvalidInvoiceParams {
   invalidReason: string;
 }
 
-// AES 加密
+// AES 加密 - 輸出大寫
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv(
     'aes-256-cbc',
@@ -79,7 +79,7 @@ function aesEncrypt(data: string, key: string, iv: string): string {
   cipher.setAutoPadding(true);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  return encrypted.toUpperCase();
 }
 
 // AES 解密
@@ -90,12 +90,12 @@ function aesDecrypt(data: string, key: string, iv: string): string {
     Buffer.from(iv, 'utf8')
   );
   decipher.setAutoPadding(true);
-  let decrypted = decipher.update(data, 'hex', 'utf8');
+  let decrypted = decipher.update(data.toLowerCase(), 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
 }
 
-// 組建交易資料字串 - 不做 URL 編碼
+// 組建交易資料字串
 function buildPostDataString(params: Record<string, string | number>): string {
   return Object.entries(params)
     .map(([key, value]) => `${key}=${String(value)}`)
@@ -156,6 +156,9 @@ export async function issueInvoice(
   };
 
   const postDataString = buildPostDataString(postData);
+  console.log('ezPay PostData (partial):', postDataString.substring(0, 300));
+  console.log('ezPay Config:', { merchantId: config.merchantId, isProduction: config.isProduction, keyLength: config.hashKey.length, ivLength: config.hashIV.length });
+
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
 
   try {
@@ -163,6 +166,8 @@ export async function issueInvoice(
       MerchantID_: config.merchantId,
       PostData_: encryptedData,
     });
+
+    console.log('ezPay Request URL:', urls.issue);
 
     const response = await fetch(urls.issue, {
       method: 'POST',
@@ -173,7 +178,7 @@ export async function issueInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay issue response:', result);
+    console.log('ezPay issue response:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
       const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
@@ -244,7 +249,7 @@ export async function invalidInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay invalid response:', result);
+    console.log('ezPay invalid response:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
       return {
@@ -323,7 +328,7 @@ export async function searchInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay search response:', result);
+    console.log('ezPay search response:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
       const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
