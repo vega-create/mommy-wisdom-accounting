@@ -6,20 +6,20 @@ import { useAuthStore } from '@/stores/authStore';
 import {
   Plus,
   Search,
-  Filter,
   Download,
   FileCheck,
   Clock,
   CheckCircle2,
   Banknote,
   Send,
-  MoreHorizontal,
   Eye,
-  Copy,
+  Edit2,
   Trash2,
   AlertCircle,
   Users,
-  Building2,
+  RefreshCw,
+  Calendar,
+  X,
 } from 'lucide-react';
 
 // 勞報單狀態配置
@@ -37,96 +37,144 @@ const staffTypeConfig = {
   external: { label: '外部人員', color: 'bg-brand-primary-100 text-brand-primary-700' },
 };
 
-// 模擬資料
-const mockLaborReports = [
-  {
-    id: '1',
-    report_number: 'LR-2026-0001',
-    staff_name: '王小明',
-    staff_type: 'external',
-    is_union_member: false,
-    income_type_code: '50',
-    work_description: '1月份SEO優化服務',
-    service_period_start: '2026-01-01',
-    service_period_end: '2026-01-31',
-    gross_amount: 30000,
-    withholding_tax: 3000,
-    nhi_premium: 633,
-    net_amount: 26367,
-    status: 'signed',
-    billing_request_number: 'BR-2026-0015',
-    created_at: '2026-01-20',
-  },
-  {
-    id: '2',
-    report_number: 'LR-2026-0002',
-    staff_name: '李小華',
-    staff_type: 'external',
-    is_union_member: true,
-    income_type_code: '9B',
-    work_description: '產品攝影',
-    service_period_start: '2026-01-15',
-    service_period_end: '2026-01-15',
-    gross_amount: 15000,
-    withholding_tax: 0,
-    nhi_premium: 0,
-    net_amount: 15000,
-    status: 'pending',
-    billing_request_number: null,
-    created_at: '2026-01-22',
-  },
-  {
-    id: '3',
-    report_number: 'LR-2026-0003',
-    staff_name: '張美玲',
-    staff_type: 'internal',
-    is_union_member: false,
-    income_type_code: '50',
-    work_description: '行政作業支援',
-    service_period_start: '2026-01-01',
-    service_period_end: '2026-01-31',
-    gross_amount: 25000,
-    withholding_tax: 2500,
-    nhi_premium: 528,
-    net_amount: 21972,
-    status: 'paid',
-    billing_request_number: null,
-    created_at: '2026-01-18',
-  },
-];
+interface LaborReport {
+  id: string;
+  report_number: string;
+  staff_name: string;
+  staff_type: string;
+  is_union_member: boolean;
+  income_type_code: string;
+  work_description: string;
+  service_period_start: string;
+  service_period_end: string;
+  gross_amount: number;
+  withholding_tax: number;
+  nhi_premium: number;
+  net_amount: number;
+  status: string;
+  sign_url?: string;
+  billing_request?: {
+    id: string;
+    billing_number: string;
+  };
+  created_at: string;
+}
 
 export default function LaborReportsPage() {
   const { company } = useAuthStore();
-  const [laborReports, setLaborReports] = useState(mockLaborReports);
+  const [laborReports, setLaborReports] = useState<LaborReport[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [staffTypeFilter, setStaffTypeFilter] = useState<string>('all');
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  // 時間篩選
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  
+  // 刪除確認
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // 篩選邏輯
+  // 載入資料
+  const loadReports = async () => {
+    if (!company?.id) return;
+    
+    setIsLoading(true);
+    try {
+      const params = new URLSearchParams({ company_id: company.id });
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (staffTypeFilter !== 'all') params.append('staff_type', staffTypeFilter);
+
+      const res = await fetch(`/api/labor-reports?${params}`);
+      const json = await res.json();
+      
+      if (json.data) {
+        setLaborReports(json.data);
+      }
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadReports();
+  }, [company?.id, statusFilter, staffTypeFilter]);
+
+  // 篩選邏輯（含時間）
   const filteredReports = laborReports.filter(report => {
-    const matchSearch = report.staff_name.includes(searchTerm) ||
-                       report.report_number.includes(searchTerm) ||
-                       report.work_description.includes(searchTerm);
-    const matchStatus = statusFilter === 'all' || report.status === statusFilter;
-    const matchStaffType = staffTypeFilter === 'all' || report.staff_type === staffTypeFilter;
-    return matchSearch && matchStatus && matchStaffType;
+    const matchSearch = !searchTerm || 
+      report.staff_name.includes(searchTerm) ||
+      report.report_number.includes(searchTerm) ||
+      (report.work_description && report.work_description.includes(searchTerm));
+    
+    // 時間篩選
+    let matchDate = true;
+    if (dateFrom) {
+      matchDate = matchDate && report.created_at >= dateFrom;
+    }
+    if (dateTo) {
+      matchDate = matchDate && report.created_at <= dateTo + 'T23:59:59';
+    }
+    
+    return matchSearch && matchDate;
   });
 
   // 統計數據
   const stats = {
-    total: laborReports.length,
-    pending: laborReports.filter(r => r.status === 'pending').length,
-    signed: laborReports.filter(r => r.status === 'signed').length,
-    totalAmount: laborReports.reduce((sum, r) => sum + r.net_amount, 0),
+    total: filteredReports.length,
+    pending: filteredReports.filter(r => r.status === 'pending').length,
+    signed: filteredReports.filter(r => r.status === 'signed').length,
+    totalAmount: filteredReports.reduce((sum, r) => sum + r.net_amount, 0),
   };
 
-  // 複製簽署連結
-  const copySignUrl = (reportNumber: string) => {
-    const url = `${window.location.origin}/sign/${reportNumber}`;
-    navigator.clipboard.writeText(url);
-    alert('簽署連結已複製！');
+  // 刪除勞報單
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/labor-reports/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      
+      if (json.success) {
+        setLaborReports(prev => prev.filter(r => r.id !== id));
+        setDeleteId(null);
+      } else {
+        alert(json.error || '刪除失敗');
+      }
+    } catch (error) {
+      alert('刪除失敗');
+    }
+  };
+
+  // 匯出 CSV
+  const handleExport = () => {
+    const headers = ['單號', '姓名', '人員類型', '所得類別', '服務內容', '服務期間起', '服務期間迄', '應稅所得', '扣繳稅額', '二代健保', '實付金額', '狀態', '建立日期'];
+    const rows = filteredReports.map(r => [
+      r.report_number,
+      r.staff_name,
+      r.staff_type === 'external' ? '外部人員' : '內部人員',
+      r.income_type_code,
+      r.work_description || '',
+      r.service_period_start || '',
+      r.service_period_end || '',
+      r.gross_amount,
+      r.withholding_tax,
+      r.nhi_premium,
+      r.net_amount,
+      statusConfig[r.status as keyof typeof statusConfig]?.label || r.status,
+      r.created_at.split('T')[0],
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `勞報單_${dateFrom || 'all'}_${dateTo || 'all'}.csv`;
+    link.click();
   };
 
   // 格式化金額
@@ -148,7 +196,7 @@ export default function LaborReportsPage() {
             className="btn-secondary flex items-center gap-2"
           >
             <Users className="w-4 h-4" />
-            外包人員
+            人員管理
           </Link>
           <Link
             href="/dashboard/labor/new"
@@ -198,7 +246,7 @@ export default function LaborReportsPage() {
         <div className="stats-card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">本月實付總額</p>
+              <p className="text-sm text-gray-500">篩選結果總額</p>
               <p className="stats-value text-green-600">
                 ${formatAmount(stats.totalAmount)}
               </p>
@@ -212,49 +260,101 @@ export default function LaborReportsPage() {
 
       {/* 搜尋與篩選 */}
       <div className="brand-card p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          {/* 搜尋框 */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="搜尋姓名、單號、工作內容..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field pl-10"
-            />
+        <div className="flex flex-col gap-4">
+          {/* 第一排：搜尋、狀態、人員類型 */}
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="搜尋..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input-field pl-10"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input-field w-full md:w-40"
+            >
+              <option value="all">全部狀態</option>
+              <option value="draft">草稿</option>
+              <option value="pending">待簽名</option>
+              <option value="signed">已簽名</option>
+              <option value="paid">已付款</option>
+              <option value="cancelled">已取消</option>
+            </select>
+
+            <select
+              value={staffTypeFilter}
+              onChange={(e) => setStaffTypeFilter(e.target.value)}
+              className="input-field w-full md:w-40"
+            >
+              <option value="all">全部人員</option>
+              <option value="internal">內部人員</option>
+              <option value="external">外部人員</option>
+            </select>
+
+            <button
+              onClick={loadReports}
+              className="btn-secondary flex items-center gap-2"
+              disabled={isLoading}
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              重整
+            </button>
           </div>
 
-          {/* 狀態篩選 */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input-field w-full md:w-40"
-          >
-            <option value="all">全部狀態</option>
-            <option value="draft">草稿</option>
-            <option value="pending">待簽名</option>
-            <option value="signed">已簽名</option>
-            <option value="paid">已付款</option>
-            <option value="cancelled">已取消</option>
-          </select>
-
-          {/* 人員類型篩選 */}
-          <select
-            value={staffTypeFilter}
-            onChange={(e) => setStaffTypeFilter(e.target.value)}
-            className="input-field w-full md:w-40"
-          >
-            <option value="all">全部人員</option>
-            <option value="internal">內部人員</option>
-            <option value="external">外部人員</option>
-          </select>
-
-          {/* 匯出按鈕 */}
-          <button className="btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            匯出 CSV
-          </button>
+          {/* 第二排：時間篩選、匯出 */}
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-500">期間：</span>
+            </div>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="input-field w-full md:w-40"
+              placeholder="起始日期"
+            />
+            <span className="text-gray-400">~</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="input-field w-full md:w-40"
+              placeholder="結束日期"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                清除日期
+              </button>
+            )}
+            <div className="ml-auto">
+              <button 
+                onClick={handleExport}
+                className="btn-secondary flex items-center gap-2"
+                disabled={filteredReports.length === 0}
+              >
+                <Download className="w-4 h-4" />
+                匯出 CSV ({filteredReports.length} 筆)
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -294,112 +394,126 @@ export default function LaborReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredReports.map((report) => {
-                const StatusIcon = statusConfig[report.status as keyof typeof statusConfig].icon;
-                return (
-                  <tr key={report.id} className="hover:bg-brand-primary-50/50 transition-colors">
-                    <td className="px-4 py-4">
-                      <Link 
-                        href={`/dashboard/labor/${report.id}`}
-                        className="font-medium text-brand-primary-700 hover:underline"
-                      >
-                        {report.report_number}
-                      </Link>
-                      {report.billing_request_number && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          關聯：{report.billing_request_number}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900">{report.staff_name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${staffTypeConfig[report.staff_type as keyof typeof staffTypeConfig].color}`}>
-                          {staffTypeConfig[report.staff_type as keyof typeof staffTypeConfig].label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-gray-500">
-                          所得類別：{report.income_type_code}
-                        </span>
-                        {report.is_union_member && (
-                          <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-                            工會
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="text-gray-900 line-clamp-2">{report.work_description}</p>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-600">
-                      <p>{report.service_period_start}</p>
-                      <p>~ {report.service_period_end}</p>
-                    </td>
-                    <td className="px-4 py-4 text-right font-medium text-gray-900">
-                      ${formatAmount(report.gross_amount)}
-                    </td>
-                    <td className="px-4 py-4 text-right text-sm">
-                      <p className="text-red-600">-${formatAmount(report.withholding_tax)}</p>
-                      <p className="text-orange-600">-${formatAmount(report.nhi_premium)}</p>
-                    </td>
-                    <td className="px-4 py-4 text-right font-bold text-brand-primary-700">
-                      ${formatAmount(report.net_amount)}
-                    </td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[report.status as keyof typeof statusConfig].color}`}>
-                        <StatusIcon className="w-3.5 h-3.5" />
-                        {statusConfig[report.status as keyof typeof statusConfig].label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center justify-center gap-1">
-                        <Link
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center">
+                    <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500">載入中...</p>
+                  </td>
+                </tr>
+              ) : filteredReports.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center">
+                    <FileCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">沒有找到符合條件的勞報單</p>
+                    <Link
+                      href="/dashboard/labor/new"
+                      className="btn-primary mt-4 inline-flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      新增第一筆勞報單
+                    </Link>
+                  </td>
+                </tr>
+              ) : (
+                filteredReports.map((report) => {
+                  const StatusIcon = statusConfig[report.status as keyof typeof statusConfig]?.icon || Clock;
+                  return (
+                    <tr key={report.id} className="hover:bg-brand-primary-50/50 transition-colors">
+                      <td className="px-4 py-4">
+                        <Link 
                           href={`/dashboard/labor/${report.id}`}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="查看詳情"
+                          className="font-medium text-brand-primary-700 hover:underline"
                         >
-                          <Eye className="w-4 h-4 text-gray-600" />
+                          {report.report_number}
                         </Link>
-                        {report.status === 'pending' && (
-                          <button
-                            onClick={() => copySignUrl(report.report_number)}
+                        {report.billing_request && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            關聯：{report.billing_request.billing_number}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{report.staff_name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${staffTypeConfig[report.staff_type as keyof typeof staffTypeConfig]?.color || 'bg-gray-100'}`}>
+                            {staffTypeConfig[report.staff_type as keyof typeof staffTypeConfig]?.label || report.staff_type}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-500">
+                            所得類別：{report.income_type_code}
+                          </span>
+                          {report.is_union_member && (
+                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                              工會
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="text-gray-900 line-clamp-2">{report.work_description || '-'}</p>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {report.service_period_start ? (
+                          <>
+                            <p>{report.service_period_start}</p>
+                            <p>~ {report.service_period_end}</p>
+                          </>
+                        ) : '-'}
+                      </td>
+                      <td className="px-4 py-4 text-right font-medium text-gray-900">
+                        ${formatAmount(report.gross_amount)}
+                      </td>
+                      <td className="px-4 py-4 text-right text-sm">
+                        <p className="text-red-600">-${formatAmount(report.withholding_tax)}</p>
+                        <p className="text-orange-600">-${formatAmount(report.nhi_premium)}</p>
+                      </td>
+                      <td className="px-4 py-4 text-right font-bold text-brand-primary-700">
+                        ${formatAmount(report.net_amount)}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[report.status as keyof typeof statusConfig]?.color || 'bg-gray-100'}`}>
+                          <StatusIcon className="w-3.5 h-3.5" />
+                          {statusConfig[report.status as keyof typeof statusConfig]?.label || report.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-center gap-1">
+                          <Link
+                            href={`/dashboard/labor/${report.id}`}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="複製簽署連結"
+                            title="查看詳情"
                           >
-                            <Copy className="w-4 h-4 text-gray-600" />
-                          </button>
-                        )}
-                        {report.status === 'draft' && (
-                          <button
-                            className="p-2 hover:bg-red-100 rounded-lg transition-colors"
-                            title="刪除"
-                          >
-                            <Trash2 className="w-4 h-4 text-red-600" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                            <Eye className="w-4 h-4 text-gray-600" />
+                          </Link>
+                          {(report.status === 'draft' || report.status === 'pending') && (
+                            <Link
+                              href={`/dashboard/labor/${report.id}/edit`}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="編輯"
+                            >
+                              <Edit2 className="w-4 h-4 text-gray-600" />
+                            </Link>
+                          )}
+                          {report.status === 'draft' && (
+                            <button
+                              onClick={() => setDeleteId(report.id)}
+                              className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                              title="刪除"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
-
-        {filteredReports.length === 0 && (
-          <div className="text-center py-12">
-            <FileCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">沒有找到符合條件的勞報單</p>
-            <Link
-              href="/dashboard/labor/new"
-              className="btn-primary mt-4 inline-flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              新增第一筆勞報單
-            </Link>
-          </div>
-        )}
       </div>
 
       {/* 提示訊息 */}
@@ -417,6 +531,30 @@ export default function LaborReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* 刪除確認 Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">確認刪除</h3>
+            <p className="text-gray-600 mb-6">確定要刪除此勞報單嗎？此操作無法復原。</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteId(null)}
+                className="btn-secondary flex-1"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleDelete(deleteId)}
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+              >
+                確認刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
