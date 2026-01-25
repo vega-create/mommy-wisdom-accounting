@@ -8,36 +8,8 @@ export async function GET() {
 
   const timestamp = Math.floor(Date.now() / 1000);
 
-  const postData = new URLSearchParams();
-  postData.append('RespondType', 'JSON');
-  postData.append('Version', '1.4');
-  postData.append('TimeStamp', String(timestamp));
-  postData.append('TransNum', '');
-  postData.append('MerchantOrderNo', 'T' + timestamp);
-  postData.append('BuyerName', '測試');
-  postData.append('BuyerUBN', '');
-  postData.append('BuyerAddress', '');
-  postData.append('BuyerEmail', '');
-  postData.append('Category', 'B2C');
-  postData.append('TaxType', '1');
-  postData.append('TaxRate', '5');
-  postData.append('Amt', '95');
-  postData.append('TaxAmt', '5');
-  postData.append('TotalAmt', '100');
-  postData.append('CarrierType', '');
-  postData.append('CarrierNum', '');
-  postData.append('LoveCode', '');
-  postData.append('PrintFlag', 'Y');
-  postData.append('ItemName', '測試商品');
-  postData.append('ItemCount', '1');
-  postData.append('ItemUnit', '式');
-  postData.append('ItemPrice', '100');
-  postData.append('ItemAmt', '100');
-  postData.append('Comment', '');
-  postData.append('CreateStatusTime', '');
-  postData.append('Status', '1');
-
-  const queryString = postData.toString();
+  // 不做 URL 編碼，直接組字串
+  const queryString = `RespondType=JSON&Version=1.4&TimeStamp=${timestamp}&TransNum=&MerchantOrderNo=T${timestamp}&BuyerName=test&BuyerUBN=&BuyerAddress=&BuyerEmail=&Category=B2C&TaxType=1&TaxRate=5&Amt=95&TaxAmt=5&TotalAmt=100&CarrierType=&CarrierNum=&LoveCode=&PrintFlag=Y&ItemName=test&ItemCount=1&ItemUnit=unit&ItemPrice=100&ItemAmt=100&Comment=&CreateStatusTime=&Status=1`;
 
   const cipher = crypto.createCipheriv('aes-256-cbc', hashKey, hashIV);
   let encrypted = cipher.update(queryString, 'utf8', 'hex');
@@ -50,5 +22,5 @@ export async function GET() {
   });
   const result = await response.json();
 
-  return NextResponse.json({ queryString: queryString.substring(0, 200), result });
+  return NextResponse.json({ len: queryString.length, result });
 }
