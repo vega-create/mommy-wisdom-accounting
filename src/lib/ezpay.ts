@@ -69,17 +69,10 @@ export interface InvalidInvoiceParams {
   invalidReason: string;
 }
 
-// ezPay 專用 URL 編碼（類似 PHP 的 http_build_query + urlencode）
-function ezPayUrlEncode(str: string): string {
-  return encodeURIComponent(str)
-    .replace(/%20/g, '+')
-    .replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
-}
-
-// 組建交易資料字串（使用 ezPay 格式的 URL 編碼）
+// 組建交易資料字串（不做編碼）
 function buildPostDataString(params: Record<string, string | number>): string {
   return Object.entries(params)
-    .map(([key, value]) => `${key}=${ezPayUrlEncode(String(value))}`)
+    .map(([key, value]) => `${key}=${value}`)
     .join('&');
 }
 
@@ -166,7 +159,6 @@ export async function issueInvoice(
   console.log('ezPay PostData:', postDataString.substring(0, 500));
 
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
-  console.log('ezPay Encrypted (first 100):', encryptedData.substring(0, 100));
 
   try {
     const formData = new URLSearchParams({
