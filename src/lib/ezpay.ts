@@ -39,21 +39,21 @@ export interface InvoiceItem {
 export interface IssueInvoiceParams {
   orderNumber: string;        // 訂單編號
   invoiceType: 'B2B' | 'B2C'; // 發票類型
-  
+
   // 買受人資訊
   buyerName: string;
   buyerTaxId?: string;        // 統編 (B2B 必填)
   buyerEmail?: string;
   buyerPhone?: string;
   buyerAddress?: string;
-  
+
   // 載具 (B2C)
   carrierType?: '' | '0' | '1' | '2'; // 空:無, 0:手機條碼, 1:自然人憑證, 2:ezPay載具
   carrierNum?: string;
-  
+
   // 捐贈
   loveCode?: string;          // 愛心碼
-  
+
   // 發票內容
   items: InvoiceItem[];
   taxType?: '1' | '2' | '3';  // 1:應稅, 2:零稅率, 3:免稅
@@ -79,7 +79,12 @@ export interface InvalidInvoiceParams {
 
 // AES 加密
 function aesEncrypt(data: string, key: string, iv: string): string {
-  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  const cipher = crypto.createCipheriv(
+    'aes-256-cbc',
+    Buffer.from(key, 'utf8'),
+    Buffer.from(iv, 'utf8')
+  );
+  cipher.setAutoPadding(true);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return encrypted;
@@ -87,7 +92,12 @@ function aesEncrypt(data: string, key: string, iv: string): string {
 
 // AES 解密
 function aesDecrypt(data: string, key: string, iv: string): string {
-  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  const decipher = crypto.createDecipheriv(
+    'aes-256-cbc',
+    Buffer.from(key, 'utf8'),
+    Buffer.from(iv, 'utf8')
+  );
+  decipher.setAutoPadding(true);
   let decrypted = decipher.update(data, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
@@ -113,10 +123,10 @@ export async function issueInvoice(
   // 計算金額
   const taxType = params.taxType || '1';
   const taxRate = taxType === '1' ? 0.05 : 0;
-  
+
   // 計算總金額（含稅）
   const totalAmount = params.items.reduce((sum, item) => sum + item.amount, 0);
-  
+
   // 計算未稅金額和稅額
   const salesAmount = Math.round(totalAmount / (1 + taxRate));
   const taxAmount = totalAmount - salesAmount;
