@@ -25,33 +25,30 @@ export async function POST(request: NextRequest) {
     const { merchant_id, hash_key, hash_iv } = body;
 
     const now = new Date();
-    const transNum = `TEST${Date.now()}`;
-    const createDate = now.toISOString().slice(0, 10).replace(/-/g, '/');
+    const transNum = `T${Date.now()}`;
     
+    // 必填欄位
     const postData: Record<string, string> = {
       RespondType: 'JSON',
       Version: '1.5',
       TimeStamp: Math.floor(now.getTime() / 1000).toString(),
       TransNum: transNum,
       MerchantOrderNo: transNum,
+      Status: '1',
+      Category: 'B2C',
       BuyerName: '測試買家',
       BuyerEmail: 'test@example.com',
-      Category: 'B2C',
+      PrintFlag: 'Y',
       TaxType: '1',
       TaxRate: '5',
       Amt: '100',
       TaxAmt: '5',
       TotalAmt: '105',
-      CarrierType: '',
-      CarrierNum: '',
-      LoveCode: '',
-      PrintFlag: 'Y',
       ItemName: '測試商品',
       ItemCount: '1',
       ItemUnit: '個',
       ItemPrice: '100',
       ItemAmt: '100',
-      CreateDate: createDate,
     };
 
     const queryString = Object.entries(postData)
@@ -77,7 +74,7 @@ export async function POST(request: NextRequest) {
       status: result.Status,
       message: result.Message,
       result: result.Result,
-      debug: { merchant_id, transNum }
+      debug: { merchant_id, transNum, queryString: queryString.substring(0, 100) }
     });
 
   } catch (error: any) {
