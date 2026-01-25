@@ -66,7 +66,9 @@ export async function GET(request: NextRequest) {
       .from('acct_invoices')
       .select(`
         *,
-        items:acct_invoice_items(*)
+        items:acct_invoice_items(*),
+        billing:acct_billing_requests(id, billing_number, status, paid_at),
+        customer:acct_customers(id, name, email, tax_id)
       `)
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
@@ -94,7 +96,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: `取得發票失敗: ${error.message}` }, { status: 500 });
     }
 
-    return NextResponse.json({ data: data || [] });
+    // 查詢關聯的交易記錄
+    const invoiceIds = (data || []).map(inv => inv.id);
+    let transactions: any[] = [];
+    
+    if (invoiceIds.length > 0) {
+      const { data: txData } = await supabase
+        .from('acct_transactions')
+        .select('id, invoice_id, amount, transaction_date, description')
+        .in('invoice_id', invoiceIds);
+      
+      transactions = txData || [];
+    }
+
+    // 合併交易資訊到發票
+    const enrichedData = (data || []).map(invoice => ({
+      ...invoice,
+      transaction: transactions.find(tx => tx.invoice_id === invoice.id) || null,
+    }));
+
+    return NextResponse.json({ data: enrichedData });
   } catch (error) {
     console.error('Error fetching invoices:', error);
     return NextResponse.json({ error: '取得發票失敗' }, { status: 500 });
@@ -272,6 +293,44 @@ export async function POST(request: NextRequest) {
           invoice_status: status === 'issued' ? 'issued' : 'pending',
         })
         .eq('id', billing_request_id);
+    }
+
+    // 開票成功後發送 LINE 群組通知
+    if (status === 'issued') {
+      try {
+        const { data: lineSettings } = await supabase
+          .from('acct_line_settings')
+          .select('channel_access_token, admin_group_id')
+          .eq('company_id', company_id)
+          .eq('is_active', true)
+          .single();
+
+        if (lineSettings?.channel_access_token && lineSettings?.admin_group_id) {
+          const message = `📄 發票開立通知
+
+🧾 發票號碼：${invoiceNumber}
+👤 買受人：${buyer_name}${buyer_tax_id ? `\n🏢 統編：${buyer_tax_id}` : ''}
+💰 金額：NT$ ${totalAmount.toLocaleString()}
+📧 類型：${invoice_type}
+
+${buyer_email ? `✉️ 發票已自動寄送至 ${buyer_email}` : '⚠️ 未設定 Email，請手動通知客戶'}`;
+
+          await fetch('https://api.line.me/v2/bot/message/push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${lineSettings.channel_access_token}`,
+            },
+            body: JSON.stringify({
+              to: lineSettings.admin_group_id,
+              messages: [{ type: 'text', text: message }],
+            }),
+          });
+        }
+      } catch (lineError) {
+        console.error('LINE notification error:', lineError);
+        // LINE 通知失敗不影響主流程
+      }
     }
 
     return NextResponse.json({ 

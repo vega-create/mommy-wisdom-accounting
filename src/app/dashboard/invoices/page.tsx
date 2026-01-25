@@ -34,6 +34,7 @@ interface Invoice {
   invoice_date: string;
   buyer_name: string;
   buyer_tax_id: string | null;
+  buyer_email: string | null;
   invoice_type: 'B2B' | 'B2C';
   tax_type: string;
   sales_amount: number;
@@ -45,6 +46,18 @@ interface Invoice {
   void_reason: string | null;
   created_at: string;
   items?: InvoiceItem[];
+  billing?: {
+    id: string;
+    billing_number: string;
+    status: string;
+    paid_at: string | null;
+  } | null;
+  transaction?: {
+    id: string;
+    amount: number;
+    transaction_date: string;
+    description: string;
+  } | null;
 }
 
 interface InvoiceItem {
@@ -695,6 +708,7 @@ export default function InvoicesPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">類型</th>
                 <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">金額</th>
                 <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">狀態</th>
+                <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">收款</th>
                 <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">操作</th>
               </tr>
             </thead>
@@ -710,6 +724,11 @@ export default function InvoicesPage() {
                         隨機碼：{invoice.ezpay_random_num}
                       </div>
                     )}
+                    {invoice.billing && (
+                      <div className="text-xs text-blue-600">
+                        📋 {invoice.billing.billing_number}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {invoice.invoice_date}
@@ -718,6 +737,9 @@ export default function InvoicesPage() {
                     <div className="text-sm font-medium text-gray-900">{invoice.buyer_name}</div>
                     {invoice.buyer_tax_id && (
                       <div className="text-xs text-gray-500">統編：{invoice.buyer_tax_id}</div>
+                    )}
+                    {invoice.buyer_email && (
+                      <div className="text-xs text-green-600">✉️ {invoice.buyer_email}</div>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -738,6 +760,26 @@ export default function InvoicesPage() {
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(invoice.status)}`}>
                       {getStatusText(invoice.status)}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {invoice.billing?.paid_at ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                        <CheckCircle className="w-3 h-3" />
+                        已收款
+                      </span>
+                    ) : invoice.billing ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                        <Clock className="w-3 h-3" />
+                        待收款
+                      </span>
+                    ) : invoice.transaction ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                        <CheckCircle className="w-3 h-3" />
+                        已記帳
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
