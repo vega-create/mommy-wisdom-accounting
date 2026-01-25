@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
-function addPadding(str: string, blocksize: number = 32): string {
+// 試試標準 16 字節塊
+function addPadding16(str: string): string {
   const len = Buffer.byteLength(str, 'utf8');
-  const pad = blocksize - (len % blocksize);
+  const pad = 16 - (len % 16);
+  return str + String.fromCharCode(pad).repeat(pad);
+}
+
+// 32 字節塊
+function addPadding32(str: string): string {
+  const len = Buffer.byteLength(str, 'utf8');
+  const pad = 32 - (len % 32);
   return str + String.fromCharCode(pad).repeat(pad);
 }
 
@@ -13,21 +21,32 @@ function httpBuildQuery(params: Record<string, string | number>): string {
     .join('&');
 }
 
+async function testEncryption(padded: string, hashKey: string, hashIV: string, merchantId: string) {
+  const cipher = crypto.createCipheriv('aes-256-cbc', hashKey, hashIV);
+  cipher.setAutoPadding(false);
+  let encrypted = cipher.update(padded, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  const response = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `MerchantID_=${merchantId}&PostData_=${encrypted}`,
+  });
+  return response.json();
+}
+
 export async function GET() {
-  // 用智慧媽咪的金鑰測試
   const merchantId = '347148408';
   const hashKey = 'vwhgNY7Roo7IgpITd7FcXy8g0t3QwEuL';
   const hashIV = 'Pb7Pegcr7o4sOXKC';
   
   const timestamp = Math.floor(Date.now() / 1000);
-  const orderNo = 'DEBUG' + timestamp;
-  
   const postData = {
     RespondType: 'JSON',
     Version: '1.5',
     TimeStamp: timestamp,
     TransNum: '',
-    MerchantOrderNo: orderNo,
+    MerchantOrderNo: 'TEST' + timestamp,
     Status: '1',
     CreateStatusTime: '',
     Category: 'B2C',
@@ -54,38 +73,30 @@ export async function GET() {
   };
   
   const queryString = httpBuildQuery(postData);
-  const padded = addPadding(queryString, 32);
   
-  const cipher = crypto.createCipheriv('aes-256-cbc', hashKey, hashIV);
-  cipher.setAutoPadding(false);
-  let encrypted = cipher.update(padded, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
+  // 測試兩種填充方式
+  const padded16 = addPadding16(queryString);
+  const padded32 = addPadding32(queryString);
   
-  // 實際發送到 ezPay
-  try {
-    const formBody = `MerchantID_=${merchantId}&PostData_=${encrypted}`;
-    
-    const response = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody,
-    });
-    
-    const result = await response.json();
-    
-    return NextResponse.json({
-      debug: {
-        merchantId,
-        keyLength: hashKey.length,
-        ivLength: hashIV.length,
-        queryStringPreview: queryString.substring(0, 200),
-        queryStringLength: queryString.length,
-        paddedLength: Buffer.byteLength(padded, 'utf8'),
-        encryptedPreview: encrypted.substring(0, 100),
-      },
-      ezpayResponse: result
-    });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) });
-  }
+  // 也測試 Node.js 自動填充
+  const cipherAuto = crypto.createCipheriv('aes-256-cbc', hashKey, hashIV);
+  let encryptedAuto = cipherAuto.update(queryString, 'utf8', 'hex');
+  encryptedAuto += cipherAuto.final('hex');
+  
+  const responseAuto = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `MerchantID_=${merchantId}&PostData_=${encryptedAuto}`,
+  });
+  const resultAuto = await responseAuto.json();
+  
+  const result16 = await testEncryption(padded16, hashKey, hashIV, merchantId);
+  const result32 = await testEncryption(padded32, hashKey, hashIV, merchantId);
+  
+  return NextResponse.json({
+    queryLength: queryString.length,
+    test_auto_padding: resultAuto,
+    test_16byte_block: result16,
+    test_32byte_block: result32,
+  });
 }
