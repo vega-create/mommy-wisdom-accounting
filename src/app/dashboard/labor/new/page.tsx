@@ -10,38 +10,37 @@ import {
   Send,
   Calculator,
   User,
-  Building2,
   FileText,
-  AlertCircle,
   CheckCircle2,
-  Info,
   Copy,
   MessageSquare,
   Eye,
   X,
   Loader2,
-  Users,
 } from 'lucide-react';
 
 // 所得類型配置（2025年）
 const incomeTypes = [
-  { code: '50', name: '執行業務所得', taxRate: 0.10, description: '扣繳 10%', examples: '設計、顧問、接案等' },
-  { code: '9A', name: '稿費所得', taxRate: 0.10, description: '全年 18 萬內免稅', examples: '撰稿、翻譯等' },
-  { code: '9B', name: '講演鐘點費', taxRate: 0.10, description: '全年 18 萬內免稅', examples: '演講、授課等' },
-  { code: '92', name: '競技競賽獎金', taxRate: 0.10, description: '扣繳 10%', examples: '比賽獎金' },
+  { code: '50', name: '執行業務所得', taxRate: 0.10, description: '扣繳 10%' },
+  { code: '9A', name: '稿費所得', taxRate: 0.10, description: '全年 18 萬內免稅' },
+  { code: '9B', name: '講演鐘點費', taxRate: 0.10, description: '全年 18 萬內免稅' },
+  { code: '92', name: '競技競賽獎金', taxRate: 0.10, description: '扣繳 10%' },
 ];
 
-// 2025 稅務計算
+// 2025 稅務計算常數
 const NHI_RATE = 0.0211;
 const NHI_THRESHOLD = 20010;
 
+// 定義完整的 Freelancer 型別
 interface Freelancer {
   id: string;
   name: string;
-  id_number: string;
-  is_union_member: boolean;
-  bank_code: string;
-  bank_account: string;
+  id_number?: string;
+  is_union_member?: boolean;
+  bank_code?: string;
+  bank_account?: string;
+  phone?: string;
+  email?: string;
   line_user_id?: string;
 }
 
@@ -62,7 +61,6 @@ interface LineGroup {
 export default function NewLaborReportPage() {
   const router = useRouter();
   const { company, user } = useAuthStore();
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // 資料來源
@@ -101,7 +99,7 @@ export default function NewLaborReportPage() {
     net_amount: 0,
   });
 
-  // 載入人員與請款單資料
+  // 載入資料
   useEffect(() => {
     if (!company?.id) return;
 
@@ -109,10 +107,12 @@ export default function NewLaborReportPage() {
     fetch(`/api/freelancers?company_id=${company.id}`)
       .then(res => res.json())
       .then(json => {
+        console.log('Loaded freelancers:', json.data);
         if (json.data) setFreelancers(json.data);
-      });
+      })
+      .catch(err => console.error('Error loading freelancers:', err));
 
-    // 載入請款單（待請款狀態）
+    // 載入請款單
     fetch(`/api/billing-requests?company_id=${company.id}&status=pending`)
       .then(res => res.json())
       .then(json => {
@@ -131,12 +131,23 @@ export default function NewLaborReportPage() {
 
   // 選擇人員時自動帶入資料
   const handleFreelancerSelect = (freelancerId: string) => {
+    if (!freelancerId) {
+      // 清空選擇
+      setFormData(prev => ({
+        ...prev,
+        freelancer_id: '',
+      }));
+      return;
+    }
+
     const freelancer = freelancers.find(f => f.id === freelancerId);
+    console.log('Selected freelancer:', freelancer);
+    
     if (freelancer) {
       setFormData(prev => ({
         ...prev,
         freelancer_id: freelancerId,
-        staff_name: freelancer.name,
+        staff_name: freelancer.name || '',
         id_number: freelancer.id_number || '',
         is_union_member: freelancer.is_union_member || false,
         bank_code: freelancer.bank_code || '',
@@ -153,7 +164,7 @@ export default function NewLaborReportPage() {
     let withholding = 0;
     let nhi = 0;
 
-    // 扣繳稅額（簡化：9A/9B 先不扣，年底再結算）
+    // 扣繳稅額（9A/9B 先不扣）
     if (incomeType && !['9A', '9B'].includes(formData.income_type_code)) {
       withholding = Math.round(gross * incomeType.taxRate);
     }
@@ -163,13 +174,11 @@ export default function NewLaborReportPage() {
       nhi = Math.round(gross * NHI_RATE);
     }
 
-    const net = gross - withholding - nhi;
-
     setTaxCalc({
       gross_amount: gross,
       withholding_tax: withholding,
       nhi_premium: nhi,
-      net_amount: net,
+      net_amount: gross - withholding - nhi,
     });
   }, [formData.gross_amount, formData.income_type_code, formData.is_union_member]);
 
@@ -198,7 +207,7 @@ export default function NewLaborReportPage() {
           ...taxCalc,
           total_income: formData.gross_amount,
           created_by: user?.id,
-          send_sign_request: sendLine, // 如果要發送 LINE，狀態設為 pending
+          send_sign_request: sendLine,
         }),
       });
 
@@ -209,7 +218,6 @@ export default function NewLaborReportPage() {
         const url = `${window.location.origin}/sign/${report.sign_token}`;
         setSignUrl(url);
 
-        // 預設訊息
         const msg = `${formData.staff_name} 您好，
 
 智慧媽咪國際有限公司 勞報單已建立，請點擊以下連結完成簽署：
@@ -241,7 +249,7 @@ ${url}
     }
   };
 
-  // 發送 LINE 訊息
+  // 發送 LINE
   const handleSendLine = async () => {
     if (!selectedLineGroup) {
       alert('請選擇發送群組');
@@ -272,7 +280,6 @@ ${url}
     }
   };
 
-  // 複製連結
   const copySignUrl = () => {
     navigator.clipboard.writeText(signUrl);
     alert('連結已複製！');
@@ -346,7 +353,7 @@ ${url}
                   <option value="">-- 選擇或手動輸入 --</option>
                   {freelancers.map(f => (
                     <option key={f.id} value={f.id}>
-                      {f.name} {f.is_union_member ? '(工會)' : ''}
+                      {f.name} {f.is_union_member ? '(工會)' : ''} {f.id_number ? `- ${f.id_number.slice(0, 4)}****` : ''}
                     </option>
                   ))}
                 </select>
@@ -392,6 +399,16 @@ ${url}
                 </label>
               </div>
             </div>
+
+            {/* 銀行資訊 - 顯示帶入的資料 */}
+            {(formData.bank_code || formData.bank_account) && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">銀行帳戶：</span>
+                  {formData.bank_code} - {formData.bank_account}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 所得資訊 */}
@@ -486,7 +503,6 @@ ${url}
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">關聯後可追蹤專案毛利</p>
                 </div>
               )}
             </div>
@@ -495,7 +511,6 @@ ${url}
 
         {/* 側邊計算結果 */}
         <div className="space-y-6">
-          {/* 稅務試算 */}
           <div className="brand-card p-6 sticky top-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5 text-brand-primary-600" />
@@ -524,30 +539,22 @@ ${url}
               </div>
             </div>
 
-            {/* 提示 */}
             {formData.is_union_member && (
               <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5" />
-                  <div className="text-sm text-green-800">
-                    <p className="font-medium">工會成員免扣二代健保</p>
-                  </div>
+                  <p className="text-sm text-green-800 font-medium">工會成員免扣二代健保</p>
                 </div>
               </div>
             )}
 
-            {/* 按鈕 */}
             <div className="mt-6 space-y-3">
               <button
                 onClick={() => handleSubmit(true)}
                 disabled={saving}
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 建立並發送 LINE
               </button>
               <button
@@ -578,23 +585,16 @@ ${url}
             </div>
 
             <div className="p-4 space-y-4">
-              {/* 簽署連結 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">簽署連結</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={signUrl}
-                    readOnly
-                    className="input-field flex-1 bg-gray-50 text-sm"
-                  />
+                  <input type="text" value={signUrl} readOnly className="input-field flex-1 bg-gray-50 text-sm" />
                   <button onClick={copySignUrl} className="btn-secondary px-3">
                     <Copy className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* 發送群組 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">發送群組（LINE）</label>
                 <select
@@ -608,13 +608,10 @@ ${url}
                   ))}
                 </select>
                 {lineGroups.length === 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    尚無 LINE 群組，可直接複製連結手動發送
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">尚無 LINE 群組，可直接複製連結手動發送</p>
                 )}
               </div>
 
-              {/* 訊息內容 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">訊息內容（可編輯）</label>
                 <textarea
