@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useCompany } from '@/lib/context/CompanyContext';
+import { useAuthStore } from '@/stores/authStore';
 
 interface Item { item_name: string; description: string; quantity: number; unit: string; unit_price: number; amount: number; }
 
 export default function QuotationEditPage() {
   const params = useParams();
   const router = useRouter();
-  const { currentCompany } = useCompany();
+  const { company } = useAuthStore();
   const isNew = params.id === 'new';
 
   const [form, setForm] = useState({ customer_name: '', customer_tax_id: '', customer_email: '', customer_phone: '', contact_person: '', title: '', description: '', payment_terms: '', notes: '', tax_type: 'taxable' });
@@ -43,7 +43,7 @@ export default function QuotationEditPage() {
   const handleSave = async () => {
     if (!form.customer_name || !form.title) { alert('請填寫客戶名稱和主旨'); return; }
     setSaving(true);
-    const payload = { ...form, company_id: currentCompany?.id, subtotal: calcSubtotal(), tax_amount: calcTax(), total_amount: calcTotal(), items };
+    const payload = { ...form, company_id: company?.id, subtotal: calcSubtotal(), tax_amount: calcTax(), total_amount: calcTotal(), items };
     const url = isNew ? '/api/quotations' : `/api/quotations/${params.id}`;
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await res.json();

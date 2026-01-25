@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useCompany } from '@/lib/context/CompanyContext';
+import { useAuthStore } from '@/stores/authStore';
 import Link from 'next/link';
 
 const statusLabels: Record<string, string> = {
@@ -14,22 +14,22 @@ const statusColors: Record<string, string> = {
 };
 
 export default function QuotationsPage() {
-  const { currentCompany } = useCompany();
+  const { company } = useAuthStore();
   const [quotations, setQuotations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (currentCompany?.id) {
+    if (company?.id) {
       fetchQuotations();
     } else {
       setLoading(false);
     }
-  }, [currentCompany]);
+  }, [company]);
 
   const fetchQuotations = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/quotations?company_id=${currentCompany?.id}`);
+      const res = await fetch(`/api/quotations?company_id=${company?.id}`);
       const data = await res.json();
       setQuotations(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -56,7 +56,7 @@ export default function QuotationsPage() {
     }
   };
 
-  if (!currentCompany) {
+  if (!company) {
     return <div className="p-6 text-center text-gray-500">請先選擇公司</div>;
   }
 
@@ -64,7 +64,7 @@ export default function QuotationsPage() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">報價單管理</h1>
-        <Link href="/dashboard/quotations/new" className="px-4 py-2 bg-coral-500 text-white rounded-lg hover:bg-coral-600">
+        <Link href="/dashboard/quotations/new" className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
           新增報價單
         </Link>
       </div>
@@ -72,7 +72,7 @@ export default function QuotationsPage() {
       {loading ? (
         <div className="text-center py-10">載入中...</div>
       ) : quotations.length === 0 ? (
-        <div className="text-center py-10 text-gray-500">尚無報價單</div>
+        <div className="text-center py-10 text-gray-500">尚無報價單，點擊右上角新增</div>
       ) : (
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <table className="w-full">
@@ -113,12 +113,6 @@ export default function QuotationsPage() {
           </table>
         </div>
       )}
-
-      <style jsx global>{`
-        .bg-coral-500 { background-color: #E8534B; }
-        .bg-coral-600 { background-color: #D14940; }
-        .hover\:bg-coral-600:hover { background-color: #D14940; }
-      `}</style>
     </div>
   );
 }
