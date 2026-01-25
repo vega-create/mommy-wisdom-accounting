@@ -9,14 +9,12 @@ interface AuthState {
   isAuthenticated: boolean;
   error: string | null;
 
-  // Actions
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   loadUser: () => Promise<void>;
   switchCompany: (companyId: string) => Promise<void>;
-  
-  // Permission helpers
+
   canEdit: () => boolean;
   canApprove: () => boolean;
   isAdmin: () => boolean;
@@ -32,9 +30,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
-    
+
     try {
-      // 1. Supabase Auth 登入
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -50,7 +47,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return false;
       }
 
-      // 2. 取得用戶資料
       const { data: userData, error: userError } = await supabase
         .from('acct_users')
         .select('*')
@@ -62,7 +58,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return false;
       }
 
-      // 3. 取得用戶的公司列表
       const { data: userCompaniesData } = await supabase
         .from('acct_user_companies')
         .select(`
@@ -73,14 +68,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const userCompanies = userCompaniesData || [];
 
-      // 4. 取得預設公司或第一個公司
+      // 優先使用 localStorage 記憶的公司
       let currentCompany: DbCompany | null = null;
-      const defaultCompany = userCompanies.find(uc => uc.is_default);
-      
-      if (defaultCompany) {
-        currentCompany = defaultCompany.company;
-      } else if (userCompanies.length > 0) {
-        currentCompany = userCompanies[0].company;
+      const savedCompanyId = typeof window !== 'undefined' ? localStorage.getItem('selectedCompanyId') : null;
+      const savedCompany = savedCompanyId ? userCompanies.find(uc => uc.company_id === savedCompanyId) : null;
+
+      if (savedCompany) {
+        currentCompany = savedCompany.company;
+      } else {
+        const defaultCompany = userCompanies.find(uc => uc.is_default);
+        if (defaultCompany) {
+          currentCompany = defaultCompany.company;
+        } else if (userCompanies.length > 0) {
+          currentCompany = userCompanies[0].company;
+        }
       }
 
       set({
@@ -101,6 +102,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await supabase.auth.signOut();
+    // 登出時清除記憶的公司
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('selectedCompanyId');
+    }
     set({
       user: null,
       company: null,
@@ -114,7 +119,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      // 1. 建立 Supabase Auth 帳號
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -130,14 +134,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { success: false, error: '註冊失敗' };
       }
 
-      // 2. 建立用戶資料
       const { data: userData, error: userError } = await supabase
         .from('acct_users')
         .insert({
           auth_id: authData.user.id,
           email,
           name,
-          role: 'viewer', // 預設角色
+          role: 'viewer',
         })
         .select()
         .single();
@@ -166,7 +169,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      // 取得用戶資料
       const { data: userData } = await supabase
         .from('acct_users')
         .select('*')
@@ -178,7 +180,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      // 取得用戶的公司列表
       const { data: userCompaniesData } = await supabase
         .from('acct_user_companies')
         .select(`
@@ -189,14 +190,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const userCompanies = userCompaniesData || [];
 
-      // 取得預設公司
+      // 優先使用 localStorage 記憶的公司
       let currentCompany: DbCompany | null = null;
-      const defaultCompany = userCompanies.find(uc => uc.is_default);
-      
-      if (defaultCompany) {
-        currentCompany = defaultCompany.company;
-      } else if (userCompanies.length > 0) {
-        currentCompany = userCompanies[0].company;
+      const savedCompanyId = typeof window !== 'undefined' ? localStorage.getItem('selectedCompanyId') : null;
+      const savedCompany = savedCompanyId ? userCompanies.find(uc => uc.company_id === savedCompanyId) : null;
+
+      if (savedCompany) {
+        currentCompany = savedCompany.company;
+      } else {
+        const defaultCompany = userCompanies.find(uc => uc.is_default);
+        if (defaultCompany) {
+          currentCompany = defaultCompany.company;
+        } else if (userCompanies.length > 0) {
+          currentCompany = userCompanies[0].company;
+        }
       }
 
       set({
@@ -214,17 +221,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   switchCompany: async (companyId: string) => {
     const { userCompanies } = get();
     const targetCompany = userCompanies.find(uc => uc.company_id === companyId);
-    
+
     if (targetCompany) {
       set({ company: targetCompany.company });
+      // 記住選擇的公司
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedCompanyId', companyId);
+      }
     }
   },
 
-  // Permission helpers
   canEdit: () => {
     const { user, userCompanies, company } = get();
     if (!user || !company) return false;
-    
+
     const userCompany = userCompanies.find(uc => uc.company_id === company.id);
     return userCompany?.role === 'admin' || userCompany?.role === 'accountant';
   },
@@ -232,7 +242,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   canApprove: () => {
     const { user, userCompanies, company } = get();
     if (!user || !company) return false;
-    
+
     const userCompany = userCompanies.find(uc => uc.company_id === company.id);
     return userCompany?.role === 'admin';
   },
@@ -240,7 +250,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAdmin: () => {
     const { user, userCompanies, company } = get();
     if (!user || !company) return false;
-    
+
     const userCompany = userCompanies.find(uc => uc.company_id === company.id);
     return userCompany?.role === 'admin';
   },
