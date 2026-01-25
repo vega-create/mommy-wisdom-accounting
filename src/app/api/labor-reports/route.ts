@@ -89,11 +89,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('acct_labor_reports')
-      .select(`
-        *,
-        freelancer:acct_freelancers(id, name, is_union_member),
-        billing_request:acct_billing_requests(id, billing_number, customer_id)
-      `)
+      .select('*')
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
