@@ -198,6 +198,7 @@ export default function NewLaborReportPage() {
           ...taxCalc,
           total_income: formData.gross_amount,
           created_by: user?.id,
+          send_sign_request: sendLine, // 如果要發送 LINE，狀態設為 pending
         }),
       });
 
