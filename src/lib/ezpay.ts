@@ -1,5 +1,6 @@
 // lib/ezpay.ts
-// ezPay 電子發票 API 串接
+// ezPay 電子發票 API 串接 - 修正版
+// 關鍵修正：使用 32 字節塊的 PKCS7 填充（與 PHP addpadding 函數一致）
 
 import crypto from 'crypto';
 
@@ -69,45 +70,75 @@ export interface InvalidInvoiceParams {
   invalidReason: string;
 }
 
-// PHP http_build_query 風格的 URL 編碼（空格變 +）
-function phpUrlEncode(str: string): string {
-  return encodeURIComponent(str)
-    .replace(/%20/g, '+')
-    .replace(/!/g, '%21')
-    .replace(/'/g, '%27')
-    .replace(/\(/g, '%28')
-    .replace(/\)/g, '%29')
-    .replace(/\*/g, '%2A');
+/**
+ * 模擬 PHP addpadding 函數
+ * 使用 32 字節塊的 PKCS7 填充（ezPay 特殊要求）
+ */
+function addPadding(str: string, blocksize: number = 32): string {
+  const len = Buffer.byteLength(str, 'utf8');
+  const pad = blocksize - (len % blocksize);
+  return str + String.fromCharCode(pad).repeat(pad);
 }
 
-// 組建交易資料字串（模擬 PHP http_build_query）
-function buildPostDataString(params: Record<string, string | number>): string {
+/**
+ * 模擬 PHP http_build_query
+ * URL 編碼所有值
+ */
+function httpBuildQuery(params: Record<string, string | number>): string {
   return Object.entries(params)
-    .map(([key, value]) => `${key}=${phpUrlEncode(String(value))}`)
+    .map(([key, value]) => {
+      // PHP 的 http_build_query 會對值進行 URL 編碼
+      // 空格會變成 +，其他特殊字元會變成 %XX
+      const encoded = encodeURIComponent(String(value))
+        .replace(/%20/g, '+'); // PHP 的 http_build_query 用 + 代替空格
+      return `${key}=${encoded}`;
+    })
     .join('&');
 }
 
-// AES 加密（輸出 hex 格式）
+/**
+ * AES-256-CBC 加密（ezPay 專用）
+ * 使用 OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING，因為我們已手動填充
+ */
 function aesEncrypt(data: string, key: string, iv: string): string {
+  // 1. 先做 32 字節塊的 PKCS7 填充（與 PHP addpadding 一致）
+  const paddedData = addPadding(data, 32);
+
+  // 2. 使用 AES-256-CBC 加密，禁用自動填充
   const cipher = crypto.createCipheriv(
     'aes-256-cbc',
     Buffer.from(key, 'utf8'),
     Buffer.from(iv, 'utf8')
   );
-  let encrypted = cipher.update(data, 'utf8', 'hex');
+  cipher.setAutoPadding(false); // 禁用自動填充，因為我們已手動填充
+
+  // 3. 加密並輸出 hex（小寫）
+  let encrypted = cipher.update(paddedData, 'utf8', 'hex');
   encrypted += cipher.final('hex');
+
   return encrypted;
 }
 
-// AES 解密
+/**
+ * AES-256-CBC 解密
+ */
 function aesDecrypt(data: string, key: string, iv: string): string {
   const decipher = crypto.createDecipheriv(
     'aes-256-cbc',
     Buffer.from(key, 'utf8'),
     Buffer.from(iv, 'utf8')
   );
+  decipher.setAutoPadding(false); // 禁用自動填充
+
   let decrypted = decipher.update(data, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
+
+  // 移除 PKCS7 填充
+  const padLen = decrypted.charCodeAt(decrypted.length - 1);
+  if (padLen > 0 && padLen <= 32) {
+    decrypted = decrypted.slice(0, -padLen);
+  }
+
   return decrypted;
 }
 
@@ -121,32 +152,35 @@ export async function issueInvoice(
   const urls = config.isProduction ? EZPAY_URLS.production : EZPAY_URLS.test;
   const timestamp = Math.floor(Date.now() / 1000);
 
+  // 稅額計算
   const taxType = params.taxType || '1';
   const taxRate = taxType === '1' ? 0.05 : 0;
   const totalAmount = params.items.reduce((sum, item) => sum + item.amount, 0);
   const salesAmount = Math.round(totalAmount / (1 + taxRate));
   const taxAmount = totalAmount - salesAmount;
 
+  // 組合商品資訊
   const itemName = params.items.map(i => i.name).join('|');
   const itemCount = params.items.map(i => i.count).join('|');
   const itemUnit = params.items.map(i => i.unit || '式').join('|');
   const itemPrice = params.items.map(i => i.price).join('|');
   const itemAmount = params.items.map(i => i.amount).join('|');
 
+  // 建立 PostData 參數（順序與 PHP 範例一致）
   const postData: Record<string, string | number> = {
     RespondType: 'JSON',
     Version: '1.5',
     TimeStamp: timestamp,
     TransNum: '',
     MerchantOrderNo: params.orderNumber,
-    Status: '1',
+    Status: '1', // 1=立即開立
     CreateStatusTime: '',
     Category: params.invoiceType,
     BuyerName: params.buyerName,
     BuyerUBN: params.buyerTaxId || '',
+    BuyerAddress: params.buyerAddress || '',
     BuyerEmail: params.buyerEmail || '',
     BuyerPhone: params.buyerPhone || '',
-    BuyerAddress: params.buyerAddress || '',
     CarrierType: params.carrierType || '',
     CarrierNum: params.carrierNum || '',
     LoveCode: params.loveCode || '',
@@ -164,21 +198,26 @@ export async function issueInvoice(
     Comment: params.comment || '',
   };
 
-  const postDataString = buildPostDataString(postData);
-  console.log('ezPay PostData:', postDataString.substring(0, 500));
-  console.log('ezPay Key length:', config.hashKey.length, 'IV length:', config.hashIV.length);
+  // 使用 http_build_query 風格組建字串
+  const postDataString = httpBuildQuery(postData);
 
+  console.log('=== ezPay 開立發票 ===');
+  console.log('環境:', config.isProduction ? '正式' : '測試');
+  console.log('URL:', urls.issue);
+  console.log('商店代號:', config.merchantId);
+  console.log('HashKey 長度:', config.hashKey.length);
+  console.log('HashIV 長度:', config.hashIV.length);
+  console.log('PostData (前200字):', postDataString.substring(0, 200));
+
+  // AES 加密
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
-  console.log('ezPay Encrypted (first 100):', encryptedData.substring(0, 100));
+  console.log('加密後 (前100字):', encryptedData.substring(0, 100));
 
   try {
     const formData = new URLSearchParams({
       MerchantID_: config.merchantId,
       PostData_: encryptedData,
     });
-
-    console.log('ezPay Request URL:', urls.issue);
-    console.log('ezPay MerchantID:', config.merchantId);
 
     const response = await fetch(urls.issue, {
       method: 'POST',
@@ -189,9 +228,10 @@ export async function issueInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay issue response:', JSON.stringify(result, null, 2));
+    console.log('ezPay 回應:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
+      // 解密回傳資料
       const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
       const invoiceData = JSON.parse(decryptedData);
 
@@ -207,12 +247,12 @@ export async function issueInvoice(
     } else {
       return {
         success: false,
-        message: result.Message || '開立失敗',
+        message: `${result.Status}: ${result.Message || '開立失敗'}`,
         rawResponse: result,
       };
     }
   } catch (error) {
-    console.error('ezPay issue error:', error);
+    console.error('ezPay 錯誤:', error);
     return {
       success: false,
       message: `API 錯誤: ${error instanceof Error ? error.message : String(error)}`,
@@ -242,7 +282,7 @@ export async function invalidInvoice(
     InvalidReason: params.invalidReason,
   };
 
-  const postDataString = buildPostDataString(postData);
+  const postDataString = httpBuildQuery(postData);
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
 
   try {
@@ -260,7 +300,7 @@ export async function invalidInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay invalid response:', JSON.stringify(result, null, 2));
+    console.log('ezPay 作廢回應:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
       return {
@@ -271,12 +311,12 @@ export async function invalidInvoice(
     } else {
       return {
         success: false,
-        message: result.Message || '作廢失敗',
+        message: `${result.Status}: ${result.Message || '作廢失敗'}`,
         rawResponse: result,
       };
     }
   } catch (error) {
-    console.error('ezPay invalid error:', error);
+    console.error('ezPay 作廢錯誤:', error);
     return {
       success: false,
       message: `API 錯誤: ${error instanceof Error ? error.message : String(error)}`,
@@ -321,7 +361,7 @@ export async function searchInvoice(
     postData.EndDate = params.endDate.replace(/-/g, '/');
   }
 
-  const postDataString = buildPostDataString(postData);
+  const postDataString = httpBuildQuery(postData);
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
 
   try {
@@ -339,7 +379,7 @@ export async function searchInvoice(
     });
 
     const result = await response.json();
-    console.log('ezPay search response:', JSON.stringify(result, null, 2));
+    console.log('ezPay 查詢回應:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
       const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
@@ -354,12 +394,12 @@ export async function searchInvoice(
     } else {
       return {
         success: false,
-        message: result.Message || '查詢失敗',
+        message: `${result.Status}: ${result.Message || '查詢失敗'}`,
         rawResponse: result,
       };
     }
   } catch (error) {
-    console.error('ezPay search error:', error);
+    console.error('ezPay 查詢錯誤:', error);
     return {
       success: false,
       message: `API 錯誤: ${error instanceof Error ? error.message : String(error)}`,
