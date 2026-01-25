@@ -69,7 +69,21 @@ export interface InvalidInvoiceParams {
   invalidReason: string;
 }
 
-// AES 加密 - 輸出大寫
+// ezPay 專用 URL 編碼（類似 PHP 的 http_build_query + urlencode）
+function ezPayUrlEncode(str: string): string {
+  return encodeURIComponent(str)
+    .replace(/%20/g, '+')
+    .replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+// 組建交易資料字串（使用 ezPay 格式的 URL 編碼）
+function buildPostDataString(params: Record<string, string | number>): string {
+  return Object.entries(params)
+    .map(([key, value]) => `${key}=${ezPayUrlEncode(String(value))}`)
+    .join('&');
+}
+
+// AES 加密
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv(
     'aes-256-cbc',
@@ -79,7 +93,7 @@ function aesEncrypt(data: string, key: string, iv: string): string {
   cipher.setAutoPadding(true);
   let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted.toUpperCase();
+  return encrypted;
 }
 
 // AES 解密
@@ -90,16 +104,9 @@ function aesDecrypt(data: string, key: string, iv: string): string {
     Buffer.from(iv, 'utf8')
   );
   decipher.setAutoPadding(true);
-  let decrypted = decipher.update(data.toLowerCase(), 'hex', 'utf8');
+  let decrypted = decipher.update(data, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
   return decrypted;
-}
-
-// 組建交易資料字串
-function buildPostDataString(params: Record<string, string | number>): string {
-  return Object.entries(params)
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join('&');
 }
 
 /**
@@ -156,18 +163,16 @@ export async function issueInvoice(
   };
 
   const postDataString = buildPostDataString(postData);
-  console.log('ezPay PostData (partial):', postDataString.substring(0, 300));
-  console.log('ezPay Config:', { merchantId: config.merchantId, isProduction: config.isProduction, keyLength: config.hashKey.length, ivLength: config.hashIV.length });
+  console.log('ezPay PostData:', postDataString.substring(0, 500));
 
   const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
+  console.log('ezPay Encrypted (first 100):', encryptedData.substring(0, 100));
 
   try {
     const formData = new URLSearchParams({
       MerchantID_: config.merchantId,
       PostData_: encryptedData,
     });
-
-    console.log('ezPay Request URL:', urls.issue);
 
     const response = await fetch(urls.issue, {
       method: 'POST',
