@@ -1,206 +1,176 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const LINE_API_URL = 'https://api.line.me/v2/bot/message/push';
-
-// 發送 LINE 訊息
-async function sendLineMessage(accessToken: string, to: string, text: string) {
-  try {
-    const response = await fetch(LINE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        to,
-        messages: [{ type: 'text', text }]
-      }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-// 產生應付單號
-async function generatePayableNumber(companyId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, '0');
-  
-  const { data } = await supabase
-    .from('acct_payable_requests')
-    .select('payable_number')
-    .eq('company_id', companyId)
-    .like('payable_number', `PAY${year}${month}%`)
-    .order('payable_number', { ascending: false })
-    .limit(1);
-  
-  let seq = 1;
-  if (data && data.length > 0) {
-    const lastNum = data[0].payable_number;
-    seq = parseInt(lastNum.slice(-4)) + 1;
-  }
-  
-  return `PAY${year}${month}${String(seq).padStart(4, '0')}`;
-}
-
-// GET - 取得勞報單資料（用於簽署頁面）
+// GET - 透過 token 取得勞報單資料（公開，無需登入）
 export async function GET(
   request: NextRequest,
   { params }: { params: { token: string } }
 ) {
   try {
-    const token = params.token;
+    const { token } = params;
 
-    const { data: report, error } = await supabase
+    const { data, error } = await supabase
       .from('acct_labor_reports')
       .select(`
-        *,
-        company:acct_companies(name)
+        id,
+        report_number,
+        company_id,
+        staff_name,
+        id_number,
+        is_union_member,
+        income_type_code,
+        work_description,
+        service_period_start,
+        service_period_end,
+        gross_amount,
+        withholding_tax,
+        nhi_premium,
+        net_amount,
+        status,
+        bank_code,
+        bank_account,
+        company:acct_companies(id, name, logo_url)
       `)
-      .eq('signature_token', token)
+      .eq('sign_token', token)
       .single();
 
-    if (error || !report) {
-      return NextResponse.json({ error: '簽署連結無效或已過期' }, { status: 404 });
+    if (error || !data) {
+      return NextResponse.json({ error: '勞報單不存在或連結已失效' }, { status: 404 });
     }
 
-    return NextResponse.json({ data: report });
+    // 加入所得類型名稱
+    const incomeTypeNames: Record<string, string> = {
+      '50': '執行業務所得',
+      '9A': '稿費所得',
+      '9B': '講演鐘點費',
+      '92': '競技競賽獎金',
+    };
+
+    const responseData = {
+      ...data,
+      income_type_name: incomeTypeNames[data.income_type_code] || data.income_type_code,
+      company_name: data.company?.name,
+      company_logo: data.company?.logo_url,
+    };
+
+    // 移除不需要公開的欄位
+    delete (responseData as any).company;
+
+    return NextResponse.json({ data: responseData });
   } catch (error) {
-    console.error('Error fetching report:', error);
-    return NextResponse.json({ error: '載入失敗' }, { status: 500 });
+    console.error('Error fetching sign data:', error);
+    return NextResponse.json({ error: '取得資料失敗' }, { status: 500 });
   }
 }
 
-// POST - 提交簽名
+// POST - 提交簽署
 export async function POST(
   request: NextRequest,
   { params }: { params: { token: string } }
 ) {
   try {
-    const token = params.token;
+    const { token } = params;
     const body = await request.json();
-    const { signature } = body;
+    const {
+      id_number,
+      bank_code,
+      bank_account,
+      signature_image,
+    } = body;
 
-    if (!signature) {
-      return NextResponse.json({ error: '缺少簽名資料' }, { status: 400 });
+    if (!signature_image) {
+      return NextResponse.json({ error: '請提供簽名' }, { status: 400 });
     }
 
     // 取得勞報單
-    const { data: report, error: reportError } = await supabase
+    const { data: report, error: fetchError } = await supabase
       .from('acct_labor_reports')
-      .select(`
-        *,
-        staff:acct_customers(line_user_id, line_group_id, is_internal)
-      `)
-      .eq('signature_token', token)
+      .select('id, status, company_id, staff_name, net_amount, freelancer_id')
+      .eq('sign_token', token)
       .single();
 
-    if (reportError || !report) {
-      return NextResponse.json({ error: '簽署連結無效' }, { status: 404 });
+    if (fetchError || !report) {
+      return NextResponse.json({ error: '勞報單不存在或連結已失效' }, { status: 404 });
     }
 
-    if (report.status === 'signed' || report.status === 'paid') {
-      return NextResponse.json({ error: '此勞報單已簽署' }, { status: 400 });
+    if (report.status !== 'pending') {
+      return NextResponse.json({ 
+        error: report.status === 'signed' ? '此勞報單已簽署' : '此勞報單狀態無法簽署' 
+      }, { status: 400 });
     }
+
+    // 取得簽署者 IP
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    const signedIp = forwardedFor ? forwardedFor.split(',')[0] : 'unknown';
 
     const now = new Date().toISOString();
-    const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
-    // 更新勞報單狀態
+    // 更新勞報單
     const { error: updateError } = await supabase
       .from('acct_labor_reports')
       .update({
         status: 'signed',
+        id_number: id_number || undefined,
+        bank_code: bank_code || undefined,
+        bank_account: bank_account || undefined,
+        signature_image,
         signed_at: now,
-        signed_ip: ip,
-        // 簽名圖片可以存到 storage，這裡先存 base64
-        updated_at: now
+        signed_ip: signedIp,
+        sign_complete_notified_at: now,
       })
       .eq('id', report.id);
 
-    if (updateError) {
-      console.error('Update report error:', updateError);
-      return NextResponse.json({ error: '更新失敗' }, { status: 500 });
+    if (updateError) throw updateError;
+
+    // 自動建立應付帳款
+    const payableNumber = `PAY-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+    
+    const { data: payable } = await supabase
+      .from('acct_payables')
+      .insert({
+        company_id: report.company_id,
+        payable_number: payableNumber,
+        vendor_id: report.freelancer_id,
+        vendor_name: report.staff_name,
+        amount: report.net_amount,
+        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7天後
+        status: 'pending',
+        description: `勞報單 - ${report.staff_name}`,
+        source_type: 'labor_report',
+        source_id: report.id,
+      })
+      .select()
+      .single();
+
+    // 更新勞報單關聯應付帳款
+    if (payable) {
+      await supabase
+        .from('acct_labor_reports')
+        .update({ payable_id: payable.id })
+        .eq('id', report.id);
     }
 
-    // 建立應付款項
-    let payableId = null;
-    try {
-      const payableNumber = await generatePayableNumber(report.company_id);
-      
-      const { data: payable, error: payableError } = await supabase
-        .from('acct_payable_requests')
-        .insert({
-          company_id: report.company_id,
-          payable_number: payableNumber,
-          vendor_id: report.staff_id,
-          vendor_name: report.staff_name,
-          vendor_type: 'individual',
-          title: report.service_description,
-          description: `勞報單：${report.report_number}`,
-          amount: report.net_amount,
-          due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'pending',
-          source_type: 'labor',
-          labor_report_id: report.id
-        })
-        .select()
-        .single();
-
-      if (!payableError && payable) {
-        payableId = payable.id;
-
-        // 更新勞報單的應付關聯
-        await supabase
-          .from('acct_labor_reports')
-          .update({ payable_id: payable.id })
-          .eq('id', report.id);
-      }
-    } catch (payableErr) {
-      console.error('Create payable error:', payableErr);
-    }
-
-    // 發送通知給管理員
-    try {
-      const { data: lineSettings } = await supabase
-        .from('acct_line_settings')
-        .select('channel_access_token, admin_group_id')
-        .eq('company_id', report.company_id)
-        .eq('is_active', true)
-        .single();
-
-      if (lineSettings?.channel_access_token && lineSettings?.admin_group_id) {
-        const message = `✅ 勞報單簽署完成
-
-📋 單號：${report.report_number}
-👤 人員：${report.staff_name}
-💰 實付：NT$ ${report.net_amount.toLocaleString()}
-
-已建立應付款項，請至系統確認付款。`;
-
-        await sendLineMessage(
-          lineSettings.channel_access_token,
-          lineSettings.admin_group_id,
-          message
-        );
-      }
-    } catch (notifyErr) {
-      console.error('Notify error:', notifyErr);
-    }
+    // TODO: 發送 LINE 通知給建立者
+    // const { data: creator } = await supabase
+    //   .from('acct_users')
+    //   .select('line_user_id')
+    //   .eq('id', report.created_by)
+    //   .single();
+    // if (creator?.line_user_id) {
+    //   await sendLineNotification(creator.line_user_id, '勞報單已簽署完成...');
+    // }
 
     return NextResponse.json({ 
-      success: true, 
+      success: true,
       message: '簽署完成',
-      payable_id: payableId
     });
-
   } catch (error) {
     console.error('Error submitting signature:', error);
     return NextResponse.json({ error: '簽署失敗' }, { status: 500 });

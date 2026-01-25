@@ -70,7 +70,7 @@ const navigation = [
       { name: '損益表', href: '/dashboard/reports/income-statement', icon: TrendingUp },
     ],
   },
-  // Phase 1-7 功能預留
+  // Phase 1-7 功能
   {
     name: 'LINE 通知',
     href: '/dashboard/line',
@@ -99,7 +99,7 @@ const navigation = [
     name: '勞報系統',
     href: '/dashboard/labor',
     icon: FileCheck,
-    badge: 'Phase 6',
+    // Phase 6 已上線，移除 badge
   },
   {
     name: '報價合約',
@@ -123,60 +123,59 @@ export default function Sidebar() {
     );
   };
 
-  const handleLogout = async () => {
-    await logout();
-    router.push('/');
-  };
-
   const handleCompanySwitch = async (companyId: string) => {
     await switchCompany(companyId);
+    await loadAll();
     setShowCompanySelector(false);
-    // 重新載入資料
-    loadAll();
   };
 
-  // 取得用戶在當前公司的角色
-  const currentRole = userCompanies.find(uc => uc.company_id === company?.id)?.role || 'viewer';
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
+
+  const currentRole = userCompanies.find(uc => uc.company_id === company?.id)?.role;
 
   return (
-    <div className="w-64 bg-white border-r border-brand-primary-100 flex flex-col h-screen">
-      {/* Logo - Brand Header */}
-      <div className="p-4 border-b border-brand-primary-100 bg-gradient-to-r from-brand-primary-50 to-white">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-brand-primary-700 rounded-xl flex items-center justify-center shadow-brand">
-            <span className="text-white font-bold text-sm">MW</span>
+    <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
+      {/* Logo */}
+      <div className="p-4 border-b border-gray-100">
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-brand-gradient rounded-xl flex items-center justify-center shadow-brand">
+            <span className="text-white font-bold text-lg">MW</span>
           </div>
           <div>
-            <h1 className="font-bold text-brand-primary-700">智慧媽咪</h1>
-            <p className="text-xs text-brand-primary-400">商業管理系統</p>
+            <h1 className="font-bold text-gray-900">智慧媽咪</h1>
+            <p className="text-xs text-gray-500">會計管理系統</p>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Company Selector */}
-      <div className="p-3 border-b border-brand-primary-50">
+      <div className="p-3 border-b border-gray-100">
         <div className="relative">
           <button
             onClick={() => setShowCompanySelector(!showCompanySelector)}
-            className="w-full flex items-center justify-between px-3 py-2 bg-brand-primary-50 rounded-lg hover:bg-brand-primary-100 transition-colors"
+            className="w-full flex items-center justify-between p-3 bg-brand-primary-50 rounded-lg hover:bg-brand-primary-100 transition-colors"
           >
-            <div className="flex items-center gap-2 truncate">
+            <div className="flex items-center gap-2 min-w-0">
               <Building2 className="w-4 h-4 text-brand-primary-600 flex-shrink-0" />
               <span className="text-sm font-medium text-brand-primary-700 truncate">
                 {company?.name || '選擇公司'}
               </span>
             </div>
-            <ChevronDown className={`w-4 h-4 text-brand-primary-400 transition-transform ${showCompanySelector ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 text-brand-primary-600 transition-transform ${showCompanySelector ? 'rotate-180' : ''}`} />
           </button>
-          
-          {showCompanySelector && userCompanies.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-brand border border-brand-primary-100 z-10 animate-fade-in">
+
+          {showCompanySelector && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
               {userCompanies.map(uc => (
                 <button
                   key={uc.company_id}
                   onClick={() => handleCompanySwitch(uc.company_id)}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-brand-primary-50 first:rounded-t-lg last:rounded-b-lg ${
-                    company?.id === uc.company_id ? 'bg-brand-primary-100 text-brand-primary-700' : 'text-gray-700'
+                  className={`w-full text-left p-3 hover:bg-gray-50 text-sm transition-colors ${
+                    company?.id === uc.company_id
+                      ? 'bg-brand-primary-100 text-brand-primary-700' : 'text-gray-700'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -199,7 +198,7 @@ export default function Sidebar() {
             {item.href ? (
               <Link
                 href={item.href}
-                className={`nav-item ${pathname === item.href ? 'active' : ''}`}
+                className={`nav-item ${pathname === item.href || pathname.startsWith(item.href + '/') ? 'active' : ''}`}
               >
                 <item.icon className="w-5 h-5" />
                 <span className="flex-1">{item.name}</span>
@@ -257,14 +256,16 @@ export default function Sidebar() {
       </nav>
 
       {/* User Info & Logout */}
-      <div className="p-3 border-t border-brand-primary-100">
-        <div className="flex items-center gap-3 px-3 py-2 bg-brand-primary-50 rounded-lg mb-2">
+      <div className="p-3 border-t border-gray-100">
+        <div className="flex items-center gap-3 p-3 mb-2">
           <div className="w-8 h-8 bg-brand-primary-100 rounded-full flex items-center justify-center">
-            <Users className="w-4 h-4 text-brand-primary-700" />
+            <span className="text-sm font-medium text-brand-primary-700">
+              {user?.name?.[0] || 'U'}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
-            <p className="text-xs text-brand-primary-500 truncate">
+            <p className="text-xs text-gray-500">
               {currentRole === 'admin' ? '管理員' : currentRole === 'accountant' ? '會計' : '檢視者'}
             </p>
           </div>
