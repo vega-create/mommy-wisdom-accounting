@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
-    const customerType = searchParams.get('customer_type'); // customer, vendor, both
+    const customerType = searchParams.get('customer_type');
     const search = searchParams.get('search');
 
     if (!companyId) {
@@ -42,7 +42,6 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // 搜尋過濾
     let result = data || [];
     if (search) {
       const searchLower = search.toLowerCase();
@@ -78,7 +77,6 @@ export async function POST(request: NextRequest) {
       email,
       address,
       notes,
-      // Phase 2 擴充
       line_user_id,
       line_display_name,
       line_group_id,
@@ -91,9 +89,9 @@ export async function POST(request: NextRequest) {
       line_notify_enabled,
       payment_terms,
       credit_limit,
-      // 外包人員連動
-      is_vendor,
-      sync_to_freelancer,
+      bank_code,
+      bank_name,
+      bank_account,
     } = body;
 
     if (!company_id || !name) {
@@ -115,8 +113,6 @@ export async function POST(request: NextRequest) {
     if (email) insertData.email = email;
     if (address) insertData.address = address;
     if (notes) insertData.notes = notes;
-    
-    // Phase 2 擴充
     if (line_user_id) insertData.line_user_id = line_user_id;
     if (line_display_name) insertData.line_display_name = line_display_name;
     if (line_group_id) insertData.line_group_id = line_group_id;
@@ -129,7 +125,9 @@ export async function POST(request: NextRequest) {
     if (line_notify_enabled !== undefined) insertData.line_notify_enabled = line_notify_enabled;
     if (payment_terms) insertData.payment_terms = payment_terms;
     if (credit_limit) insertData.credit_limit = credit_limit;
-    if (is_vendor !== undefined) insertData.is_vendor = is_vendor;
+    if (bank_code) insertData.bank_code = bank_code;
+    if (bank_name) insertData.bank_name = bank_name;
+    if (bank_account) insertData.bank_account = bank_account;
 
     const { data, error } = await supabase
       .from('acct_customers')
@@ -142,10 +140,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `新增失敗: ${error.message}` }, { status: 500 });
     }
 
-    // 如果是廠商（個人），同步建立外包人員
-    if (sync_to_freelancer && (customer_type === 'vendor' || customer_type === 'both') && vendor_type === 'individual') {
+    // 如果是廠商且為個人（外部個人或內部人員），同步到 freelancers
+    if ((customer_type === 'vendor' || customer_type === 'both') && 
+        (vendor_type === 'individual' || vendor_type === 'internal')) {
       try {
-        await supabase.from('acct_freelancers').insert({
+        const freelancerData: Record<string, any> = {
           company_id,
           name,
           phone,
@@ -153,12 +152,29 @@ export async function POST(request: NextRequest) {
           address,
           line_user_id,
           line_display_name,
+          bank_code,
+          bank_account,
           is_active: true,
-          // 關聯到客戶
           customer_id: data.id,
-        });
-      } catch (freelancerError) {
-        console.error('Error syncing to freelancer:', freelancerError);
+        };
+
+        const { data: freelancer, error: freelancerError } = await supabase
+          .from('acct_freelancers')
+          .insert(freelancerData)
+          .select()
+          .single();
+
+        if (freelancer && !freelancerError) {
+          // 更新 customer 的 freelancer_id
+          await supabase
+            .from('acct_customers')
+            .update({ freelancer_id: freelancer.id })
+            .eq('id', data.id);
+          
+          console.log('Synced to freelancer:', freelancer.id);
+        }
+      } catch (syncError) {
+        console.error('Error syncing to freelancer:', syncError);
       }
     }
 
@@ -176,8 +192,6 @@ export async function PUT(request: NextRequest) {
     const id = searchParams.get('id');
     const body = await request.json();
 
-    console.log('Updating customer:', id, body);
-
     if (!id) {
       return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     }
@@ -186,14 +200,13 @@ export async function PUT(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // 允許更新的欄位
     const allowedFields = [
       'name', 'short_name', 'tax_id', 'customer_type', 'contact_person',
       'phone', 'email', 'address', 'notes', 'is_active',
       'line_user_id', 'line_display_name', 'line_group_id', 'line_group_name',
       'preferred_title', 'vendor_type', 'can_issue_invoice',
       'billing_contact_name', 'billing_email', 'line_notify_enabled',
-      'payment_terms', 'credit_limit', 'is_vendor',
+      'payment_terms', 'credit_limit', 'bank_code', 'bank_name', 'bank_account',
     ];
 
     allowedFields.forEach(field => {
@@ -214,6 +227,24 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: `更新失敗: ${error.message}` }, { status: 500 });
     }
 
+    // 如果有關聯的 freelancer，同步更新
+    if (data.freelancer_id) {
+      const freelancerUpdate: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (body.name) freelancerUpdate.name = body.name;
+      if (body.phone) freelancerUpdate.phone = body.phone;
+      if (body.email) freelancerUpdate.email = body.email;
+      if (body.address) freelancerUpdate.address = body.address;
+      if (body.line_user_id) freelancerUpdate.line_user_id = body.line_user_id;
+      if (body.line_display_name) freelancerUpdate.line_display_name = body.line_display_name;
+      if (body.bank_code) freelancerUpdate.bank_code = body.bank_code;
+      if (body.bank_account) freelancerUpdate.bank_account = body.bank_account;
+
+      await supabase
+        .from('acct_freelancers')
+        .update(freelancerUpdate)
+        .eq('id', data.freelancer_id);
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Error updating customer:', error);
@@ -221,32 +252,22 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - 刪除客戶（軟刪除）
+// DELETE - 刪除客戶
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const hard = searchParams.get('hard') === 'true';
 
     if (!id) {
       return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     }
 
-    if (hard) {
-      const { error } = await supabase
-        .from('acct_customers')
-        .delete()
-        .eq('id', id);
+    const { error } = await supabase
+      .from('acct_customers')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
 
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('acct_customers')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', id);
-
-      if (error) throw error;
-    }
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (error) {

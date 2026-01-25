@@ -150,8 +150,26 @@ export async function POST(
 
     // 自動建立應付帳款
     try {
+      // 先查詢完整的勞報單資料（包含 freelancer_id）
+      const { data: fullReport } = await supabase
+        .from('acct_labor_reports')
+        .select('freelancer_id')
+        .eq('id', report.id)
+        .single();
+
+      // 如果有 freelancer_id，查詢對應的 customer_id
+      let vendorId = null;
+      if (fullReport?.freelancer_id) {
+        const { data: freelancer } = await supabase
+          .from('acct_freelancers')
+          .select('customer_id')
+          .eq('id', fullReport.freelancer_id)
+          .single();
+        vendorId = freelancer?.customer_id;
+      }
+
       const payableNumber = `PAY-${Date.now().toString(36).toUpperCase()}`;
-      await supabase.from('acct_payables').insert({
+      const payableData: Record<string, any> = {
         company_id: report.company_id,
         payable_number: payableNumber,
         vendor_type: 'individual',
@@ -162,8 +180,21 @@ export async function POST(
         amount: report.net_amount,
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         status: 'pending',
-      });
-      console.log('Sign POST - payable created');
+      };
+
+      if (vendorId) {
+        payableData.vendor_id = vendorId;
+      }
+
+      const { error: payableError } = await supabase
+        .from('acct_payables')
+        .insert(payableData);
+
+      if (payableError) {
+        console.error('Create payable error:', payableError);
+      } else {
+        console.log('Sign POST - payable created');
+      }
     } catch (payableError) {
       console.error('Create payable error (non-critical):', payableError);
     }

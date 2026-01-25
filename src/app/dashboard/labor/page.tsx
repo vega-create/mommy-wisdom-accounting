@@ -20,6 +20,8 @@ import {
   RefreshCw,
   Calendar,
   X,
+  Link as LinkIcon,
+  Copy,
 } from 'lucide-react';
 
 // 勞報單狀態配置
@@ -52,6 +54,7 @@ interface LaborReport {
   nhi_premium: number;
   net_amount: number;
   status: string;
+  sign_token?: string;
   sign_url?: string;
   billing_request?: {
     id: string;
@@ -488,6 +491,19 @@ export default function LaborReportsPage() {
                           >
                             <Eye className="w-4 h-4 text-gray-600" />
                           </Link>
+                          {report.sign_token && (
+                            <button
+                              onClick={() => {
+                                const url = `${window.location.origin}/sign/${report.sign_token}`;
+                                navigator.clipboard.writeText(url);
+                                alert('簽署連結已複製！');
+                              }}
+                              className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                              title="複製簽署連結"
+                            >
+                              <Copy className="w-4 h-4 text-blue-600" />
+                            </button>
+                          )}
                           {(report.status === 'draft' || report.status === 'pending') && (
                             <Link
                               href={`/dashboard/labor/${report.id}/edit`}
