@@ -148,19 +148,20 @@ export async function POST(
 
     console.log('Sign POST - update successful');
 
-    // 自動建立應付帳款（如果 payables 表存在）
+    // 自動建立應付帳款
     try {
       const payableNumber = `PAY-${Date.now().toString(36).toUpperCase()}`;
       await supabase.from('acct_payables').insert({
         company_id: report.company_id,
         payable_number: payableNumber,
-        vendor_name: report.staff_name,
         vendor_type: 'individual',
-        title: `勞報單 - ${report.staff_name}`,
+        source_type: 'labor_report',
+        source_id: report.id,
+        labor_report_id: report.id,
+        description: `勞報單 - ${report.staff_name}`,
         amount: report.net_amount,
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         status: 'pending',
-        labor_report_id: report.id,
       });
       console.log('Sign POST - payable created');
     } catch (payableError) {
