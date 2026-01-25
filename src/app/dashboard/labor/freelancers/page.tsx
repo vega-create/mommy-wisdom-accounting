@@ -213,13 +213,14 @@ export default function FreelancersPage() {
       {/* 搜尋 */}
       <div className="brand-card p-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             placeholder="搜尋姓名、身分證、電話..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="input-field pl-10"
+            className="input-field"
+            style={{ paddingLeft: '2.75rem' }}
           />
           {searchTerm && (
             <button onClick={() => setSearchTerm('')}

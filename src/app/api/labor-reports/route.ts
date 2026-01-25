@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,6 +63,16 @@ async function generateReportNumber(companyId: string): Promise<string> {
   return `${prefix}${String(nextNumber).padStart(4, '0')}`;
 }
 
+// 產生簽署 token（使用 crypto 而非 uuid）
+function generateSignToken(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
 // GET - 取得勞報單列表
 export async function GET(request: NextRequest) {
   try {
@@ -106,7 +115,10 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database error:', error);
+      throw error;
+    }
 
     return NextResponse.json({ data: data || [] });
   } catch (error) {
@@ -119,6 +131,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('Received body:', body);
+
     const {
       company_id,
       freelancer_id,
@@ -140,11 +154,12 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!company_id || !staff_name || !gross_amount) {
-      return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
+      return NextResponse.json({ error: '缺少必要欄位: company_id, staff_name, gross_amount' }, { status: 400 });
     }
 
     // 產生單號
     const reportNumber = await generateReportNumber(company_id);
+    console.log('Generated report number:', reportNumber);
 
     // 計算稅務
     const { withholdingTax, nhiPremium, netAmount } = calculateTax(
@@ -152,45 +167,57 @@ export async function POST(request: NextRequest) {
       income_type_code,
       is_union_member
     );
+    console.log('Tax calculation:', { withholdingTax, nhiPremium, netAmount });
 
     // 產生簽署 token
-    const signToken = uuidv4();
-    const signUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://mommy-wisdom-accounting.vercel.app'}/sign/${signToken}`;
+    const signToken = generateSignToken();
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://mommy-wisdom-accounting.vercel.app';
+    const signUrl = `${baseUrl}/sign/${signToken}`;
 
     // 決定初始狀態
     const status = send_sign_request ? 'pending' : 'draft';
 
+    // 準備插入資料
+    const insertData: Record<string, any> = {
+      company_id,
+      report_number: reportNumber,
+      staff_type,
+      staff_name,
+      income_type_code,
+      gross_amount,
+      withholding_tax: withholdingTax,
+      nhi_premium: nhiPremium,
+      net_amount: netAmount,
+      status,
+      sign_token: signToken,
+      sign_url: signUrl,
+    };
+
+    // 可選欄位
+    if (freelancer_id) insertData.freelancer_id = freelancer_id;
+    if (staff_id) insertData.staff_id = staff_id;
+    if (id_number) insertData.id_number = id_number;
+    if (work_description) insertData.work_description = work_description;
+    if (service_period_start) insertData.service_period_start = service_period_start;
+    if (service_period_end) insertData.service_period_end = service_period_end;
+    if (billing_request_id) insertData.billing_request_id = billing_request_id;
+    if (bank_code) insertData.bank_code = bank_code;
+    if (bank_account) insertData.bank_account = bank_account;
+    if (created_by) insertData.created_by = created_by;
+    insertData.is_union_member = is_union_member;
+
+    console.log('Insert data:', insertData);
+
     const { data, error } = await supabase
       .from('acct_labor_reports')
-      .insert({
-        company_id,
-        report_number: reportNumber,
-        freelancer_id: freelancer_id || null,
-        staff_type,
-        staff_id: staff_id || null,
-        staff_name,
-        id_number: id_number || null,
-        is_union_member,
-        income_type_code,
-        work_description: work_description || null,
-        service_period_start: service_period_start || null,
-        service_period_end: service_period_end || null,
-        gross_amount,
-        withholding_tax: withholdingTax,
-        nhi_premium: nhiPremium,
-        net_amount: netAmount,
-        status,
-        sign_token: signToken,
-        sign_url: signUrl,
-        billing_request_id: billing_request_id || null,
-        bank_code: bank_code || null,
-        bank_account: bank_account || null,
-        created_by: created_by || null,
-      })
+      .insert(insertData)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database insert error:', error);
+      return NextResponse.json({ error: `資料庫錯誤: ${error.message}` }, { status: 500 });
+    }
 
     // 如果要發送簽署請求，記錄發送時間
     if (send_sign_request && data) {
@@ -207,6 +234,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error creating labor report:', error);
-    return NextResponse.json({ error: '新增勞報單失敗' }, { status: 500 });
+    return NextResponse.json({ 
+      error: `新增勞報單失敗: ${error instanceof Error ? error.message : '未知錯誤'}` 
+    }, { status: 500 });
   }
 }

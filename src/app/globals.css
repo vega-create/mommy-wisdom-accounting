@@ -91,11 +91,21 @@ body {
 }
 
 /* Input styles - Brand themed */
+/* 注意：移除 px-3 改為 py-2 只設定垂直 padding，水平 padding 由使用處自行設定 */
 .input-field {
-  @apply w-full px-3 py-2 border border-brand-primary-200 rounded-lg 
+  @apply w-full py-2 border border-brand-primary-200 rounded-lg 
          bg-white
          focus:outline-none focus:ring-2 focus:ring-brand-primary-700 focus:border-transparent
          transition-all duration-200;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+/* 帶有左側圖標的輸入框 */
+.input-field.pl-10,
+.input-field.pl-11,
+.input-field.pl-12 {
+  padding-left: inherit;
 }
 
 .input-label {
@@ -156,40 +166,60 @@ body {
   @apply bg-brand-primary-100 text-brand-primary-700;
 }
 
-/* Sidebar navigation - Brand themed */
+/* Navigation items */
 .nav-item {
-  @apply flex items-center gap-3 px-3 py-2.5 text-gray-600 rounded-lg
-         hover:bg-brand-primary-50 hover:text-brand-primary-700 transition-all duration-200;
+  @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 
+         hover:bg-brand-primary-50 hover:text-brand-primary-700
+         transition-all duration-200 cursor-pointer;
 }
 
 .nav-item.active {
   @apply bg-brand-primary-100 text-brand-primary-700 font-medium;
 }
 
-/* Stats card */
+/* Brand Card */
+.brand-card {
+  @apply bg-white rounded-xl shadow-sm border border-brand-primary-100 overflow-hidden;
+}
+
+/* Stats Card */
 .stats-card {
-  @apply bg-white rounded-xl p-5 border border-brand-primary-100 card-hover;
+  @apply bg-white rounded-xl p-4 shadow-sm border border-brand-primary-100;
 }
 
 .stats-card-brand {
-  @apply bg-gradient-to-br from-brand-primary-700 to-brand-primary-600 text-white rounded-xl p-5 card-hover;
+  @apply bg-brand-gradient text-white rounded-xl p-4 shadow-brand;
 }
 
 .stats-value {
-  @apply text-2xl font-bold text-gray-900;
+  @apply text-2xl font-bold mt-1;
 }
 
-.stats-label {
-  @apply text-sm text-gray-500 mt-1;
+/* Brand link */
+.brand-link {
+  @apply text-brand-primary-700 hover:text-brand-primary-600 hover:underline transition-colors;
 }
 
-/* Modal overlay */
-.modal-overlay {
-  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+/* Gradients */
+.bg-brand-gradient {
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-light) 100%);
 }
 
-.modal-content {
-  @apply bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto;
+.bg-brand-gradient-soft {
+  background: linear-gradient(135deg, #FEF2F2 0%, #FECDD3 100%);
+}
+
+.bg-brand-gradient-vertical {
+  background: linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-primary-light) 100%);
+}
+
+/* Shadow */
+.shadow-brand {
+  box-shadow: 0 4px 14px 0 rgba(163, 22, 33, 0.25);
+}
+
+.shadow-brand-lg {
+  box-shadow: 0 10px 25px -3px rgba(163, 22, 33, 0.3);
 }
 
 /* Animation */
@@ -217,35 +247,25 @@ body {
   animation: slideUp 0.3s ease-out;
 }
 
-/* Numeric formatting */
-.number-positive {
-  @apply text-green-600;
-}
-
-.number-negative {
-  @apply text-red-600;
-}
-
-/* Brand specific components */
-.brand-header {
-  @apply bg-gradient-to-r from-brand-primary-700 via-brand-primary-600 to-brand-accent;
-}
-
-.brand-card {
-  @apply bg-white border border-brand-primary-100 rounded-xl shadow-sm hover:shadow-brand transition-shadow duration-200;
-}
-
-.brand-link {
-  @apply text-brand-primary-700 hover:text-brand-primary-600 underline-offset-2 hover:underline transition-colors duration-200;
-}
-
 /* Print styles */
 @media print {
   .no-print {
     display: none !important;
   }
   
-  .print-break {
-    page-break-before: always;
+  body {
+    background: white;
+  }
+  
+  .brand-card {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+}
+
+/* 確保帶圖標的輸入框 padding 正確 */
+@layer utilities {
+  .input-field[class*="pl-"] {
+    padding-left: unset;
   }
 }

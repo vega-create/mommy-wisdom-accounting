@@ -264,13 +264,14 @@ export default function LaborReportsPage() {
           {/* 第一排：搜尋、狀態、人員類型 */}
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="搜尋..."
+                placeholder="搜尋姓名、單號、工作內容..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input-field pl-10"
+                className="input-field"
+                style={{ paddingLeft: '2.75rem' }}
               />
               {searchTerm && (
                 <button

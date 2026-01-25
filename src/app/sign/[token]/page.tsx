@@ -1,41 +1,40 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import Image from 'next/image';
 import {
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-  Calendar,
-  Banknote,
-  Eraser,
-  Send,
-  Loader2,
+  FileCheck,
   Building2,
+  User,
+  Calendar,
+  DollarSign,
+  Check,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Info,
 } from 'lucide-react';
 
-// 模擬資料（實際會從 API 取得）
-const mockReportData = {
-  report_number: 'LR-2026-0001',
-  company_name: '智慧媽咪國際有限公司',
-  company_logo: '/logo.png',
-  staff_name: '王小明',
-  id_number: 'A123456789',
-  income_type_code: '50',
-  income_type_name: '執行業務所得',
-  work_description: '2026年1月份SEO優化服務',
-  service_period_start: '2026-01-01',
-  service_period_end: '2026-01-31',
-  gross_amount: 30000,
-  withholding_tax: 3000,
-  nhi_premium: 633,
-  net_amount: 26367,
-  bank_code: '004',
-  bank_name: '台灣銀行',
-  bank_account: '12345678901234',
-  status: 'pending', // pending, signed, cancelled
-};
+interface ReportData {
+  id: string;
+  report_number: string;
+  company_name: string;
+  company_logo?: string;
+  staff_name: string;
+  id_number?: string;
+  income_type_code: string;
+  income_type_name: string;
+  work_description?: string;
+  service_period_start?: string;
+  service_period_end?: string;
+  gross_amount: number;
+  withholding_tax: number;
+  nhi_premium: number;
+  net_amount: number;
+  status: string;
+  bank_code?: string;
+  bank_account?: string;
+}
 
 export default function SignPage() {
   const params = useParams();
@@ -43,47 +42,47 @@ export default function SignPage() {
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [report, setReport] = useState<typeof mockReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [signed, setSigned] = useState(false);
-
-  // 簽名相關
+  const [success, setSuccess] = useState(false);
+  const [report, setReport] = useState<ReportData | null>(null);
+  
+  // 表單資料
+  const [idNumber, setIdNumber] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  
+  // 簽名畫布
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
-  // 表單資料（可能需要填寫或確認）
-  const [formData, setFormData] = useState({
-    id_number: '',
-    bank_code: '',
-    bank_account: '',
-    agree: false,
-  });
-
-  // 載入資料
+  // 載入勞報單資料
   useEffect(() => {
     const loadReport = async () => {
       try {
-        // TODO: 實際呼叫 API
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setReport(mockReportData);
-        setFormData(prev => ({
-          ...prev,
-          id_number: mockReportData.id_number,
-          bank_code: mockReportData.bank_code,
-          bank_account: mockReportData.bank_account,
-        }));
+        const res = await fetch(`/api/sign/${token}`);
+        const json = await res.json();
+        
+        if (json.error) {
+          setError(json.error);
+        } else if (json.data) {
+          setReport(json.data);
+          setIdNumber(json.data.id_number || '');
+          setBankCode(json.data.bank_code || '');
+          setBankAccount(json.data.bank_account || '');
+        }
       } catch (err) {
-        setError('無法載入勞報單資料，請確認連結是否正確');
+        setError('載入資料失敗，請稍後再試');
       } finally {
         setLoading(false);
       }
     };
 
-    loadReport();
+    if (token) loadReport();
   }, [token]);
 
-  // Canvas 初始化
+  // 初始化畫布
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -91,42 +90,47 @@ export default function SignPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 設定畫布大小
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx.scale(2, 2);
+    // 設定畫布尺寸
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    };
 
-    // 設定繪圖樣式
-    ctx.strokeStyle = '#1a365d';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // 填入白色背景
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
   }, [report]);
 
-  // 繪圖事件
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
+  // 取得座標
+  const getCoordinates = (e: React.TouchEvent | React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
+    
     if ('touches' in e) {
       return {
         x: e.touches[0].clientX - rect.left,
         y: e.touches[0].clientY - rect.top,
       };
     }
+    
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (e as React.MouseEvent).clientX - rect.left,
+      y: (e as React.MouseEvent).clientY - rect.top,
     };
   };
 
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+  // 開始繪製
+  const startDrawing = (e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault();
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx) return;
@@ -135,11 +139,12 @@ export default function SignPage() {
     ctx.beginPath();
     ctx.moveTo(x, y);
     setIsDrawing(true);
-    setHasSignature(true);
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  // 繪製中
+  const draw = (e: React.TouchEvent | React.MouseEvent) => {
     if (!isDrawing) return;
+    e.preventDefault();
     
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -148,236 +153,272 @@ export default function SignPage() {
     const { x, y } = getCoordinates(e);
     ctx.lineTo(x, y);
     ctx.stroke();
+    setHasSignature(true);
   };
 
+  // 結束繪製
   const stopDrawing = () => {
     setIsDrawing(false);
   };
 
+  // 清除簽名
   const clearSignature = () => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx || !canvas) return;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasSignature(false);
   };
 
   // 取得簽名圖片
-  const getSignatureImage = () => {
+  const getSignatureImage = (): string | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return null;
+    if (!canvas || !hasSignature) return null;
     return canvas.toDataURL('image/png');
   };
 
   // 提交簽署
   const handleSubmit = async () => {
-    if (!formData.agree || !hasSignature) return;
+    if (!agreed) {
+      alert('請先勾選同意條款');
+      return;
+    }
+
+    if (!hasSignature) {
+      alert('請先簽名');
+      return;
+    }
+
+    const signatureImage = getSignatureImage();
+    if (!signatureImage) {
+      alert('簽名無效，請重新簽名');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const signatureImage = getSignatureImage();
+      const res = await fetch(`/api/sign/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id_number: idNumber,
+          bank_code: bankCode,
+          bank_account: bankAccount,
+          signature_image: signatureImage,
+        }),
+      });
+
+      const json = await res.json();
       
-      // TODO: 呼叫 API 提交
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setSigned(true);
+      if (json.success) {
+        setSuccess(true);
+      } else {
+        alert(json.error || '簽署失敗');
+      }
     } catch (err) {
-      alert('提交失敗，請稍後再試');
+      alert('簽署失敗，請稍後再試');
     } finally {
       setSubmitting(false);
     }
   };
 
   // 格式化金額
-  const formatAmount = (amount: number) => {
-    return new Intl.NumberFormat('zh-TW').format(amount);
-  };
+  const formatAmount = (amount: number) => new Intl.NumberFormat('zh-TW').format(amount);
 
   // 載入中
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-brand-primary-700 animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600">載入中...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-red-700 mx-auto mb-4" />
+          <p className="text-gray-600">載入中...</p>
         </div>
       </div>
     );
   }
 
   // 錯誤
-  if (error || !report) {
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="brand-card p-8 max-w-md text-center">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-gray-900 mb-2">無法載入</h1>
-          <p className="text-gray-600">{error || '勞報單不存在或已過期'}</p>
+          <p className="text-gray-600">{error}</p>
         </div>
       </div>
     );
   }
 
-  // 已簽署或已取消
-  if (report.status === 'signed' || signed) {
+  // 已簽署或成功
+  if (success || report?.status === 'signed' || report?.status === 'paid') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="brand-card p-8 max-w-md text-center">
-          <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-gray-900 mb-2">簽署完成！</h1>
-          <p className="text-gray-600 mb-6">
-            感謝您完成簽署，款項將於審核後匯入您的帳戶。
-          </p>
-          <div className="bg-green-50 p-4 rounded-lg text-left">
-            <p className="text-sm text-green-700">
-              <strong>勞報單號：</strong>{report.report_number}
-            </p>
-            <p className="text-sm text-green-700 mt-1">
-              <strong>實付金額：</strong>NT$ {formatAmount(report.net_amount)}
-            </p>
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Check className="w-10 h-10 text-green-600" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            {success ? '簽署完成！' : '此勞報單已簽署'}
+          </h1>
+          <p className="text-gray-600 mb-6">
+            {success 
+              ? '感謝您的簽署，款項將於近日匯入您的帳戶。' 
+              : '此勞報單已經簽署完成。'}
+          </p>
+          {report && (
+            <div className="bg-gray-50 rounded-xl p-4 text-left">
+              <p className="text-sm text-gray-500">勞報單號</p>
+              <p className="font-medium">{report.report_number}</p>
+              <p className="text-sm text-gray-500 mt-2">實付金額</p>
+              <p className="text-2xl font-bold text-green-600">NT$ {formatAmount(report.net_amount)}</p>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  if (report.status === 'cancelled') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="brand-card p-8 max-w-md text-center">
-          <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-gray-900 mb-2">此勞報單已取消</h1>
-          <p className="text-gray-600">如有疑問，請聯繫發放公司。</p>
-        </div>
-      </div>
-    );
-  }
-
-  // 簽署頁面
+  // 主要簽署頁面
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-brand-primary-100 rounded-lg flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-brand-primary-700" />
-            </div>
-            <div>
-              <p className="font-semibold text-gray-900">{report.company_name}</p>
-              <p className="text-sm text-gray-500">勞報單線上簽署</p>
-            </div>
+      <header className="bg-gradient-to-r from-red-700 to-red-600 text-white py-6 px-4">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center gap-3 mb-2">
+            <FileCheck className="w-8 h-8" />
+            <h1 className="text-xl font-bold">勞報單簽署</h1>
           </div>
+          <p className="text-red-100 text-sm">{report?.company_name}</p>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        {/* 勞報單資訊 */}
-        <div className="brand-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-5 h-5 text-brand-primary-700" />
-            <h2 className="font-semibold text-gray-900">勞報單資訊</h2>
-            <span className="ml-auto text-sm text-gray-500">{report.report_number}</span>
+      <main className="max-w-lg mx-auto p-4 pb-8 space-y-4">
+        {/* 金額卡片 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <div className="text-center">
+            <p className="text-sm text-gray-500 mb-1">實付金額</p>
+            <p className="text-4xl font-bold text-red-700">
+              NT$ {formatAmount(report?.net_amount || 0)}
+            </p>
           </div>
 
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">姓名</span>
-              <span className="font-medium text-gray-900">{report.staff_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">所得類別</span>
-              <span className="text-gray-900">{report.income_type_code} - {report.income_type_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">工作內容</span>
-              <span className="text-gray-900 text-right max-w-[60%]">{report.work_description}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">服務期間</span>
-              <span className="text-gray-900">{report.service_period_start} ~ {report.service_period_end}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 金額明細 */}
-        <div className="brand-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Banknote className="w-5 h-5 text-brand-primary-700" />
-            <h2 className="font-semibold text-gray-900">金額明細</h2>
-          </div>
-
-          <div className="space-y-3">
+          <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">應稅所得</span>
-              <span className="font-medium text-gray-900">NT$ {formatAmount(report.gross_amount)}</span>
+              <span className="font-medium">NT$ {formatAmount(report?.gross_amount || 0)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">扣繳稅額（10%）</span>
-              <span className="text-red-600">-NT$ {formatAmount(report.withholding_tax)}</span>
+              <span className="text-gray-500">扣繳稅額</span>
+              <span className="text-red-600">- NT$ {formatAmount(report?.withholding_tax || 0)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">二代健保（2.11%）</span>
-              <span className="text-orange-600">-NT$ {formatAmount(report.nhi_premium)}</span>
-            </div>
-            <div className="flex justify-between pt-3 border-t-2 border-brand-primary-200">
-              <span className="font-semibold text-gray-900">實付金額</span>
-              <span className="text-xl font-bold text-brand-primary-700">
-                NT$ {formatAmount(report.net_amount)}
-              </span>
+              <span className="text-gray-500">二代健保</span>
+              <span className="text-orange-600">- NT$ {formatAmount(report?.nhi_premium || 0)}</span>
             </div>
           </div>
         </div>
 
-        {/* 匯款帳戶確認 */}
-        <div className="brand-card p-5">
-          <h2 className="font-semibold text-gray-900 mb-4">匯款帳戶確認</h2>
-          
-          <div className="grid grid-cols-2 gap-4">
+        {/* 勞報資訊 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Info className="w-5 h-5 text-gray-400" />
+            勞報資訊
+          </h2>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <label className="text-sm text-gray-500 block mb-1">銀行代碼</label>
+              <p className="text-gray-500">單號</p>
+              <p className="font-medium">{report?.report_number}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">所得類別</p>
+              <p className="font-medium">{report?.income_type_name}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-gray-500">領款人</p>
+              <p className="font-medium">{report?.staff_name}</p>
+            </div>
+            {report?.work_description && (
+              <div className="col-span-2">
+                <p className="text-gray-500">服務內容</p>
+                <p className="font-medium">{report.work_description}</p>
+              </div>
+            )}
+            {report?.service_period_start && (
+              <div className="col-span-2">
+                <p className="text-gray-500">服務期間</p>
+                <p className="font-medium">
+                  {report.service_period_start} ~ {report.service_period_end}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 填寫資料 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <User className="w-5 h-5 text-gray-400" />
+            確認資料
+          </h2>
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">身分證字號</label>
+            <input
+              type="text"
+              value={idNumber}
+              onChange={(e) => setIdNumber(e.target.value.toUpperCase())}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-lg"
+              placeholder="A123456789"
+              maxLength={10}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">銀行代碼</label>
               <input
                 type="text"
-                value={formData.bank_code}
-                onChange={(e) => setFormData(prev => ({ ...prev, bank_code: e.target.value }))}
-                className="input-field"
+                value={bankCode}
+                onChange={(e) => setBankCode(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="004"
                 maxLength={3}
               />
             </div>
-            <div>
-              <label className="text-sm text-gray-500 block mb-1">帳號</label>
+            <div className="col-span-2">
+              <label className="block text-sm text-gray-600 mb-1">銀行帳號</label>
               <input
                 type="text"
-                value={formData.bank_account}
-                onChange={(e) => setFormData(prev => ({ ...prev, bank_account: e.target.value }))}
-                className="input-field"
+                value={bankAccount}
+                onChange={(e) => setBankAccount(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="12345678901234"
               />
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            請確認帳戶正確，避免匯款失敗
-          </p>
         </div>
 
         {/* 簽名區 */}
-        <div className="brand-card p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">手寫簽名</h2>
             <button
               onClick={clearSignature}
-              className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              className="text-sm text-red-600 flex items-center gap-1"
             >
-              <Eraser className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" />
               清除
             </button>
           </div>
 
-          <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white">
+          <div className="border-2 border-dashed border-gray-200 rounded-xl overflow-hidden bg-gray-50">
             <canvas
               ref={canvasRef}
-              className="w-full h-40 touch-none cursor-crosshair"
+              className="w-full touch-none cursor-crosshair"
+              style={{ height: '200px' }}
               onMouseDown={startDrawing}
               onMouseMove={draw}
               onMouseUp={stopDrawing}
@@ -387,23 +428,23 @@ export default function SignPage() {
               onTouchEnd={stopDrawing}
             />
           </div>
-          <p className="text-xs text-gray-400 mt-2 text-center">
-            請在上方區域手寫簽名
-          </p>
+
+          {!hasSignature && (
+            <p className="text-center text-sm text-gray-400">請在上方區域簽名</p>
+          )}
         </div>
 
         {/* 同意條款 */}
-        <div className="brand-card p-5">
+        <div className="bg-white rounded-2xl shadow-sm p-6">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={formData.agree}
-              onChange={(e) => setFormData(prev => ({ ...prev, agree: e.target.checked }))}
-              className="w-5 h-5 text-brand-primary-600 rounded mt-0.5"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="w-5 h-5 mt-0.5 text-red-600 rounded"
             />
-            <span className="text-sm text-gray-700">
-              本人確認以上資料正確無誤，同意依中華民國稅法規定辦理扣繳申報，
-              並授權 {report.company_name} 代為申報執行業務所得。
+            <span className="text-sm text-gray-600">
+              我已確認以上資訊正確無誤，並同意以電子簽名方式簽署此勞報單。我了解簽署後此勞報單將產生法律效力。
             </span>
           </label>
         </div>
@@ -411,8 +452,8 @@ export default function SignPage() {
         {/* 提交按鈕 */}
         <button
           onClick={handleSubmit}
-          disabled={!formData.agree || !hasSignature || submitting}
-          className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-2 disabled:opacity-50"
+          disabled={submitting || !agreed || !hasSignature}
+          className="w-full bg-gradient-to-r from-red-700 to-red-600 text-white py-4 rounded-2xl font-semibold text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {submitting ? (
             <>
@@ -421,17 +462,16 @@ export default function SignPage() {
             </>
           ) : (
             <>
-              <Send className="w-5 h-5" />
+              <Check className="w-5 h-5" />
               確認簽署
             </>
           )}
         </button>
 
-        {/* 注意事項 */}
-        <div className="text-center text-xs text-gray-400 pb-8">
-          <p>提交後將無法修改，請確認資料正確</p>
-          <p className="mt-1">如有疑問請聯繫 {report.company_name}</p>
-        </div>
+        {/* 提示 */}
+        <p className="text-center text-xs text-gray-400">
+          簽署完成後，款項將於確認後匯入您的帳戶
+        </p>
       </main>
     </div>
   );
