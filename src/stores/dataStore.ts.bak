@@ -200,19 +200,6 @@ export const useDataStore = create<DataState>((set, get) => ({
         amount: data.amount,
         notes: data.notes || null,
         tags: data.tags || null,
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...data,
         company_id: company.id,
       })
@@ -275,19 +262,6 @@ export const useDataStore = create<DataState>((set, get) => ({
     const { data: newCustomer, error } = await supabase
       .from('acct_customers')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         // 清理空字串為 null
         bank_account_id: data.bank_account_id || null,
         from_account_id: data.from_account_id || null,
@@ -376,19 +350,6 @@ export const useDataStore = create<DataState>((set, get) => ({
         amount: data.amount,
         notes: data.notes || null,
         tags: data.tags || null,
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         ...data,
         company_id: company.id,
       })
@@ -424,19 +385,6 @@ export const useDataStore = create<DataState>((set, get) => ({
     const { data: newTransaction, error } = await supabase
       .from('acct_transactions')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         // 清理空字串為 null
         bank_account_id: data.bank_account_id || null,
         from_account_id: data.from_account_id || null,
@@ -555,19 +503,6 @@ export const useDataStore = create<DataState>((set, get) => ({
     const { data: newVoucher, error } = await supabase
       .from('acct_vouchers')
       .insert({
-        // 清理空字串為 null
-        bank_account_id: data.bank_account_id || null,
-        from_account_id: data.from_account_id || null,
-        to_account_id: data.to_account_id || null,
-        category_id: data.category_id || null,
-        customer_id: data.customer_id || null,
-        voucher_id: data.voucher_id || null,
-        transaction_date: data.transaction_date,
-        transaction_type: data.transaction_type,
-        description: data.description,
-        amount: data.amount,
-        notes: data.notes || null,
-        tags: data.tags || null,
         // 清理空字串為 null
         bank_account_id: data.bank_account_id || null,
         from_account_id: data.from_account_id || null,
