@@ -20,6 +20,7 @@ import {
   Eye,
   X,
   Loader2,
+  Users,
 } from 'lucide-react';
 
 // 所得類型配置（2025年）
@@ -51,10 +52,11 @@ interface BillingRequest {
   amount: number;
 }
 
-interface LineTarget {
-  type: 'user' | 'group';
+interface LineGroup {
   id: string;
-  name: string;
+  group_id: string;
+  group_name: string;
+  is_active: boolean;
 }
 
 export default function NewLaborReportPage() {
@@ -66,19 +68,13 @@ export default function NewLaborReportPage() {
   // 資料來源
   const [freelancers, setFreelancers] = useState<Freelancer[]>([]);
   const [billingRequests, setBillingRequests] = useState<BillingRequest[]>([]);
+  const [lineGroups, setLineGroups] = useState<LineGroup[]>([]);
 
   // LINE 發送設定
   const [showSendModal, setShowSendModal] = useState(false);
-  const [selectedLineTarget, setSelectedLineTarget] = useState<string>('');
+  const [selectedLineGroup, setSelectedLineGroup] = useState<string>('');
   const [signUrl, setSignUrl] = useState<string>('');
   const [customMessage, setCustomMessage] = useState('');
-
-  // 從 freelancers 中有 LINE ID 的人員
-  const lineTargets = freelancers.filter(f => f.line_user_id).map(f => ({
-    id: f.line_user_id!,
-    name: f.name,
-    type: 'user' as const,
-  }));
 
   // 表單資料
   const [formData, setFormData] = useState({
@@ -122,7 +118,15 @@ export default function NewLaborReportPage() {
       .then(json => {
         if (json.data) setBillingRequests(json.data);
       })
-      .catch(() => {}); // 可能還沒有這個 API
+      .catch(() => {});
+
+    // 載入 LINE 群組
+    fetch(`/api/line/groups?company_id=${company.id}`)
+      .then(res => res.json())
+      .then(json => {
+        if (json.data) setLineGroups(json.data.filter((g: LineGroup) => g.is_active));
+      })
+      .catch(() => {});
   }, [company?.id]);
 
   // 選擇人員時自動帶入資料
@@ -134,77 +138,52 @@ export default function NewLaborReportPage() {
         freelancer_id: freelancerId,
         staff_name: freelancer.name,
         id_number: freelancer.id_number || '',
-        is_union_member: freelancer.is_union_member,
+        is_union_member: freelancer.is_union_member || false,
         bank_code: freelancer.bank_code || '',
         bank_account: freelancer.bank_account || '',
-      }));
-      // 如果有 LINE ID，預設選擇
-      if (freelancer.line_user_id) {
-        setSelectedLineTarget(freelancer.line_user_id);
-      }
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        freelancer_id: '',
       }));
     }
   };
 
   // 計算稅務
-  const calculateTax = (grossAmount: number, incomeTypeCode: string, isUnionMember: boolean) => {
-    let withholdingTax = 0;
-    let nhiPremium = 0;
-
-    const incomeType = incomeTypes.find(t => t.code === incomeTypeCode);
-    if (incomeType) {
-      if (!['9A', '9B'].includes(incomeTypeCode)) {
-        withholdingTax = Math.round(grossAmount * incomeType.taxRate);
-      }
-    }
-
-    if (!isUnionMember && grossAmount >= NHI_THRESHOLD) {
-      nhiPremium = Math.round(grossAmount * NHI_RATE);
-    }
-
-    const netAmount = grossAmount - withholdingTax - nhiPremium;
-
-    return { gross_amount: grossAmount, withholding_tax: withholdingTax, nhi_premium: nhiPremium, net_amount: netAmount };
-  };
-
-  // 金額變更時重新計算
   useEffect(() => {
-    if (formData.gross_amount > 0) {
-      const calc = calculateTax(formData.gross_amount, formData.income_type_code, formData.is_union_member);
-      setTaxCalc(calc);
-    } else {
-      setTaxCalc({ gross_amount: 0, withholding_tax: 0, nhi_premium: 0, net_amount: 0 });
+    const gross = formData.gross_amount || 0;
+    const incomeType = incomeTypes.find(t => t.code === formData.income_type_code);
+    
+    let withholding = 0;
+    let nhi = 0;
+
+    // 扣繳稅額（簡化：9A/9B 先不扣，年底再結算）
+    if (incomeType && !['9A', '9B'].includes(formData.income_type_code)) {
+      withholding = Math.round(gross * incomeType.taxRate);
     }
+
+    // 二代健保（工會成員免扣）
+    if (!formData.is_union_member && gross >= NHI_THRESHOLD) {
+      nhi = Math.round(gross * NHI_RATE);
+    }
+
+    const net = gross - withholding - nhi;
+
+    setTaxCalc({
+      gross_amount: gross,
+      withholding_tax: withholding,
+      nhi_premium: nhi,
+      net_amount: net,
+    });
   }, [formData.gross_amount, formData.income_type_code, formData.is_union_member]);
 
-  // 格式化金額
-  const formatAmount = (amount: number) => new Intl.NumberFormat('zh-TW').format(amount);
+  // 建立勞報單
+  const handleSubmit = async (sendLine: boolean = false) => {
+    if (!company?.id) return;
 
-  // 產生預設訊息
-  const getDefaultMessage = () => {
-    return `${formData.staff_name} 您好，
+    if (!formData.staff_name) {
+      alert('請填寫人員姓名');
+      return;
+    }
 
-${company?.name || '公司'} 勞報單已建立，請點擊以下連結完成簽署：
-
-[簽署連結]
-
-金額明細：
-應稅所得：NT$ ${formatAmount(taxCalc.gross_amount)}
-扣繳稅額：NT$ ${formatAmount(taxCalc.withholding_tax)}
-二代健保：NT$ ${formatAmount(taxCalc.nhi_premium)}
-實付金額：NT$ ${formatAmount(taxCalc.net_amount)}
-
-請於收到後 7 日內完成簽署，謝謝！`;
-  };
-
-  // 儲存草稿
-  const handleSaveDraft = async () => {
-    if (!company?.id || !formData.staff_name || !formData.gross_amount) {
-      alert('請填寫人員姓名和金額');
+    if (!formData.gross_amount || formData.gross_amount <= 0) {
+      alert('請填寫應稅所得金額');
       return;
     }
 
@@ -217,388 +196,378 @@ ${company?.name || '公司'} 勞報單已建立，請點擊以下連結完成簽
           company_id: company.id,
           ...formData,
           ...taxCalc,
+          total_income: formData.gross_amount,
           created_by: user?.id,
-          send_sign_request: false,
         }),
       });
 
       const json = await res.json();
-      if (json.success) {
-        alert('草稿已儲存');
-        router.push('/dashboard/labor');
+
+      if (json.success && json.data) {
+        const report = json.data;
+        const url = `${window.location.origin}/sign/${report.sign_token}`;
+        setSignUrl(url);
+
+        // 預設訊息
+        const msg = `${formData.staff_name} 您好，
+
+智慧媽咪國際有限公司 勞報單已建立，請點擊以下連結完成簽署：
+
+${url}
+
+金額明細：
+應稅所得：NT$ ${taxCalc.gross_amount.toLocaleString()}
+扣繳稅額：NT$ ${taxCalc.withholding_tax.toLocaleString()}
+二代健保：NT$ ${taxCalc.nhi_premium.toLocaleString()}
+實付金額：NT$ ${taxCalc.net_amount.toLocaleString()}`;
+
+        setCustomMessage(msg);
+
+        if (sendLine) {
+          setShowSendModal(true);
+        } else {
+          alert('勞報單已建立！');
+          router.push('/dashboard/labor');
+        }
       } else {
-        alert(json.error || '儲存失敗');
+        alert(json.error || '建立失敗');
       }
     } catch (error) {
-      alert('儲存失敗');
+      console.error('Error:', error);
+      alert('建立失敗');
     } finally {
       setSaving(false);
     }
   };
 
-  // 開啟發送預覽
-  const handleOpenSendModal = async () => {
-    if (!company?.id || !formData.staff_name || !formData.gross_amount) {
-      alert('請填寫人員姓名和金額');
-      return;
-    }
-
-    // 先建立勞報單取得簽署連結
-    setLoading(true);
-    try {
-      const res = await fetch('/api/labor-reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_id: company.id,
-          ...formData,
-          ...taxCalc,
-          created_by: user?.id,
-          send_sign_request: false, // 先不發送
-        }),
-      });
-
-      const json = await res.json();
-      if (json.success && json.sign_url) {
-        setSignUrl(json.sign_url);
-        setCustomMessage(getDefaultMessage().replace('[簽署連結]', json.sign_url));
-        setShowSendModal(true);
-      } else {
-        alert(json.error || '建立失敗');
-      }
-    } catch (error) {
-      alert('建立失敗');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 發送 LINE 通知
+  // 發送 LINE 訊息
   const handleSendLine = async () => {
-    if (!selectedLineTarget) {
-      alert('請選擇發送對象');
+    if (!selectedLineGroup) {
+      alert('請選擇發送群組');
       return;
     }
 
-    setLoading(true);
     try {
       const res = await fetch('/api/line/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_id: company?.id,
-          to: selectedLineTarget,
-          message: customMessage,
+          recipient_type: 'group',
+          recipient_id: selectedLineGroup,
+          content: customMessage,
         }),
       });
 
       const json = await res.json();
       if (json.success) {
-        alert('LINE 通知已發送！');
+        alert('已發送 LINE 通知！');
         router.push('/dashboard/labor');
       } else {
         alert(json.error || '發送失敗');
       }
     } catch (error) {
       alert('發送失敗');
-    } finally {
-      setLoading(false);
     }
   };
 
   // 複製連結
   const copySignUrl = () => {
     navigator.clipboard.writeText(signUrl);
-    alert('簽署連結已複製！');
+    alert('連結已複製！');
   };
 
+  const formatAmount = (n: number) => `NT$ ${n.toLocaleString()}`;
+
   return (
-    <div className="space-y-6">
-      {/* 頁面標題 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard/labor" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">新增勞報單</h1>
-            <p className="text-sm text-gray-500 mt-1">建立勞報單並發送簽署連結</p>
-          </div>
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link href="/dashboard/labor" className="p-2 hover:bg-gray-100 rounded-lg">
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">新增勞報單</h1>
+          <p className="text-gray-500 mt-1">建立勞報單並發送簽署連結</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 主表單 */}
         <div className="lg:col-span-2 space-y-6">
-          {/* 人員類型選擇 */}
+          {/* 人員資訊 */}
           <div className="brand-card p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <User className="w-5 h-5 text-brand-primary-700" />
+              <User className="w-5 h-5 text-brand-primary-600" />
               人員資訊
             </h2>
 
             {/* 人員類型 */}
-            <div className="mb-6">
-              <label className="input-label">人員類型</label>
-              <div className="flex gap-4 mt-2">
-                <label className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  formData.staff_type === 'external' ? 'border-brand-primary-500 bg-brand-primary-50' : 'border-gray-200 hover:border-gray-300'
-                }`}>
-                  <input type="radio" name="staff_type" value="external" checked={formData.staff_type === 'external'}
-                    onChange={() => setFormData(prev => ({ ...prev, staff_type: 'external' }))} className="sr-only" />
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.staff_type === 'external' ? 'border-brand-primary-600' : 'border-gray-300'}`}>
-                    {formData.staff_type === 'external' && <div className="w-2.5 h-2.5 rounded-full bg-brand-primary-600" />}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">外部人員</p>
-                    <p className="text-sm text-gray-500">計入專案成本，可關聯請款單</p>
-                  </div>
-                </label>
-
-                <label className={`flex-1 flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  formData.staff_type === 'internal' ? 'border-brand-primary-500 bg-brand-primary-50' : 'border-gray-200 hover:border-gray-300'
-                }`}>
-                  <input type="radio" name="staff_type" value="internal" checked={formData.staff_type === 'internal'}
-                    onChange={() => setFormData(prev => ({ ...prev, staff_type: 'internal' }))} className="sr-only" />
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.staff_type === 'internal' ? 'border-brand-primary-600' : 'border-gray-300'}`}>
-                    {formData.staff_type === 'internal' && <div className="w-2.5 h-2.5 rounded-full bg-brand-primary-600" />}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">內部人員</p>
-                    <p className="text-sm text-gray-500">不計入專案成本</p>
-                  </div>
-                </label>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">人員類型</label>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, staff_type: 'external' }))}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    formData.staff_type === 'external'
+                      ? 'border-brand-primary-500 bg-brand-primary-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="font-medium text-gray-900">外部人員</div>
+                  <div className="text-sm text-gray-500 mt-1">計入專案成本，可關聯請款單</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, staff_type: 'internal' }))}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    formData.staff_type === 'internal'
+                      ? 'border-brand-primary-500 bg-brand-primary-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="font-medium text-gray-900">內部人員</div>
+                  <div className="text-sm text-gray-500 mt-1">不計入專案成本</div>
+                </button>
               </div>
             </div>
 
-            {/* 選擇或輸入人員 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              {/* 選擇人員 */}
               <div>
-                <label className="input-label">選擇人員</label>
-                <select value={formData.freelancer_id} onChange={(e) => handleFreelancerSelect(e.target.value)} className="input-field">
+                <label className="block text-sm font-medium text-gray-700 mb-1">選擇人員</label>
+                <select
+                  value={formData.freelancer_id}
+                  onChange={(e) => handleFreelancerSelect(e.target.value)}
+                  className="input-field"
+                >
                   <option value="">-- 選擇或手動輸入 --</option>
                   {freelancers.map(f => (
                     <option key={f.id} value={f.id}>
-                      {f.name} {f.is_union_member && '(工會)'}
+                      {f.name} {f.is_union_member ? '(工會)' : ''}
                     </option>
                   ))}
                 </select>
-                {freelancers.length === 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    <Link href="/dashboard/labor/freelancers" className="text-brand-primary-600 hover:underline">
-                      點此新增人員
-                    </Link>
-                  </p>
-                )}
               </div>
 
+              {/* 姓名 */}
               <div>
-                <label className="input-label">姓名 *</label>
-                <input type="text" value={formData.staff_name}
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  姓名 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.staff_name}
                   onChange={(e) => setFormData(prev => ({ ...prev, staff_name: e.target.value }))}
-                  className="input-field" placeholder="請輸入姓名" />
+                  className="input-field"
+                  placeholder="請輸入姓名"
+                />
               </div>
 
+              {/* 身分證 */}
               <div>
-                <label className="input-label">身分證字號</label>
-                <input type="text" value={formData.id_number}
+                <label className="block text-sm font-medium text-gray-700 mb-1">身分證字號</label>
+                <input
+                  type="text"
+                  value={formData.id_number}
                   onChange={(e) => setFormData(prev => ({ ...prev, id_number: e.target.value.toUpperCase() }))}
-                  className="input-field" placeholder="A123456789" maxLength={10} />
+                  className="input-field"
+                  placeholder="A123456789"
+                  maxLength={10}
+                />
               </div>
 
-              <div className="flex items-center gap-2 pt-6">
-                <input type="checkbox" id="is_union_member" checked={formData.is_union_member}
-                  onChange={(e) => setFormData(prev => ({ ...prev, is_union_member: e.target.checked }))}
-                  className="w-4 h-4 text-brand-primary-600 rounded" />
-                <label htmlFor="is_union_member" className="text-sm text-gray-700">
-                  工會成員（免扣二代健保）
+              {/* 工會成員 */}
+              <div className="flex items-center">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_union_member}
+                    onChange={(e) => setFormData(prev => ({ ...prev, is_union_member: e.target.checked }))}
+                    className="w-4 h-4 text-brand-primary-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">工會成員（免扣二代健保）</span>
                 </label>
               </div>
             </div>
           </div>
 
-          {/* 服務內容 */}
+          {/* 所得資訊 */}
           <div className="brand-card p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-brand-primary-700" />
-              服務內容
+              <Calculator className="w-5 h-5 text-brand-primary-600" />
+              所得資訊
             </h2>
 
-            <div className="space-y-4">
-              <div>
-                <label className="input-label">所得類別 *</label>
-                <select value={formData.income_type_code}
-                  onChange={(e) => setFormData(prev => ({ ...prev, income_type_code: e.target.value }))}
-                  className="input-field">
+            <div className="grid grid-cols-2 gap-4">
+              {/* 所得類別 */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">所得類別</label>
+                <div className="grid grid-cols-2 gap-2">
                   {incomeTypes.map(type => (
-                    <option key={type.code} value={type.code}>
-                      {type.code} - {type.name}（{type.description}）
-                    </option>
+                    <button
+                      key={type.code}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, income_type_code: type.code }))}
+                      className={`p-3 rounded-lg border text-left transition-all ${
+                        formData.income_type_code === type.code
+                          ? 'border-brand-primary-500 bg-brand-primary-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="font-medium text-sm">{type.code} - {type.name}</div>
+                      <div className="text-xs text-gray-500">{type.description}</div>
+                    </button>
                   ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  {incomeTypes.find(t => t.code === formData.income_type_code)?.examples}
-                </p>
+                </div>
               </div>
 
-              <div>
-                <label className="input-label">工作內容說明</label>
-                <textarea value={formData.work_description}
+              {/* 服務內容 */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">服務內容</label>
+                <input
+                  type="text"
+                  value={formData.work_description}
                   onChange={(e) => setFormData(prev => ({ ...prev, work_description: e.target.value }))}
-                  className="input-field" rows={3} placeholder="請描述服務內容..." />
+                  className="input-field"
+                  placeholder="例：網站設計、影片剪輯"
+                />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="input-label">服務期間起</label>
-                  <input type="date" value={formData.service_period_start}
-                    onChange={(e) => setFormData(prev => ({ ...prev, service_period_start: e.target.value }))}
-                    className="input-field" />
-                </div>
-                <div>
-                  <label className="input-label">服務期間迄</label>
-                  <input type="date" value={formData.service_period_end}
-                    onChange={(e) => setFormData(prev => ({ ...prev, service_period_end: e.target.value }))}
-                    className="input-field" />
-                </div>
-              </div>
-
+              {/* 服務期間 */}
               <div>
-                <label className="input-label">應稅所得金額 *</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">NT$</span>
-                  <input type="number" value={formData.gross_amount || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, gross_amount: parseInt(e.target.value) || 0 }))}
-                    className="input-field pl-14 text-right text-lg font-semibold" placeholder="0" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 關聯請款單（僅外部人員顯示） */}
-          {formData.staff_type === 'external' && billingRequests.length > 0 && (
-            <div className="brand-card p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-brand-primary-700" />
-                關聯請款單（計算毛利）
-              </h2>
-              <select value={formData.billing_request_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, billing_request_id: e.target.value }))}
-                className="input-field">
-                <option value="">-- 不關聯 --</option>
-                {billingRequests.map(br => (
-                  <option key={br.id} value={br.id}>
-                    {br.billing_number} - {br.customer_name} (${formatAmount(br.amount)})
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-2">關聯請款單後，勞報金額將計入該專案成本</p>
-            </div>
-          )}
-
-          {/* 匯款帳戶 */}
-          <div className="brand-card p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-brand-primary-700" />
-              匯款帳戶
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="input-label">銀行代碼</label>
-                <input type="text" value={formData.bank_code}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bank_code: e.target.value }))}
-                  className="input-field" placeholder="004" maxLength={3} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">服務起始日</label>
+                <input
+                  type="date"
+                  value={formData.service_period_start}
+                  onChange={(e) => setFormData(prev => ({ ...prev, service_period_start: e.target.value }))}
+                  className="input-field"
+                />
               </div>
               <div>
-                <label className="input-label">銀行帳號</label>
-                <input type="text" value={formData.bank_account}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bank_account: e.target.value }))}
-                  className="input-field" placeholder="12345678901234" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">服務結束日</label>
+                <input
+                  type="date"
+                  value={formData.service_period_end}
+                  onChange={(e) => setFormData(prev => ({ ...prev, service_period_end: e.target.value }))}
+                  className="input-field"
+                />
               </div>
+
+              {/* 應稅所得 */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  應稅所得 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={formData.gross_amount || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, gross_amount: parseInt(e.target.value) || 0 }))}
+                  className="input-field text-lg font-semibold"
+                  placeholder="0"
+                />
+              </div>
+
+              {/* 關聯請款單 */}
+              {formData.staff_type === 'external' && billingRequests.length > 0 && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">關聯請款單（選填）</label>
+                  <select
+                    value={formData.billing_request_id}
+                    onChange={(e) => setFormData(prev => ({ ...prev, billing_request_id: e.target.value }))}
+                    className="input-field"
+                  >
+                    <option value="">-- 不關聯 --</option>
+                    {billingRequests.map(br => (
+                      <option key={br.id} value={br.id}>
+                        {br.billing_number} - {br.customer_name} (${br.amount.toLocaleString()})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">關聯後可追蹤專案毛利</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 右側計算預覽 */}
-        <div className="lg:col-span-1">
+        {/* 側邊計算結果 */}
+        <div className="space-y-6">
+          {/* 稅務試算 */}
           <div className="brand-card p-6 sticky top-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-brand-primary-700" />
-              稅務計算
+              <FileText className="w-5 h-5 text-brand-primary-600" />
+              稅務試算
             </h2>
 
-            <div className="space-y-4">
-              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+            <div className="space-y-3">
+              <div className="flex justify-between py-2 border-b">
                 <span className="text-gray-600">應稅所得</span>
-                <span className="text-lg font-semibold text-gray-900">${formatAmount(taxCalc.gross_amount)}</span>
+                <span className="font-semibold">{formatAmount(taxCalc.gross_amount)}</span>
               </div>
-
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-gray-600">扣繳稅額</span>
-                  <p className="text-xs text-gray-400">{incomeTypes.find(t => t.code === formData.income_type_code)?.description}</p>
-                </div>
-                <span className="text-red-600 font-medium">-${formatAmount(taxCalc.withholding_tax)}</span>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">扣繳稅額 (10%)</span>
+                <span className="text-red-600">- {formatAmount(taxCalc.withholding_tax)}</span>
               </div>
-
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-gray-600">二代健保</span>
-                  <p className="text-xs text-gray-400">{formData.is_union_member ? '工會成員免扣' : `2.11% (起扣點 $${formatAmount(NHI_THRESHOLD)})`}</p>
-                </div>
-                <span className={`font-medium ${formData.is_union_member ? 'text-green-600' : 'text-orange-600'}`}>
-                  {formData.is_union_member ? '免扣' : `-$${formatAmount(taxCalc.nhi_premium)}`}
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-600">
+                  二代健保 (2.11%)
+                  {formData.is_union_member && <span className="text-green-600 ml-1">免扣</span>}
                 </span>
+                <span className="text-orange-600">- {formatAmount(taxCalc.nhi_premium)}</span>
               </div>
-
-              <div className="flex justify-between items-center pt-3 border-t-2 border-brand-primary-200">
-                <span className="font-semibold text-gray-900">實付金額</span>
-                <span className="text-2xl font-bold text-brand-primary-700">${formatAmount(taxCalc.net_amount)}</span>
+              <div className="flex justify-between py-3 bg-brand-primary-50 rounded-lg px-3 -mx-3">
+                <span className="font-semibold text-brand-primary-800">實付金額</span>
+                <span className="text-xl font-bold text-brand-primary-700">{formatAmount(taxCalc.net_amount)}</span>
               </div>
             </div>
 
             {/* 提示 */}
-            {formData.gross_amount > 0 && formData.gross_amount < NHI_THRESHOLD && !formData.is_union_member && (
-              <div className="mt-4 p-3 bg-green-50 rounded-lg">
+            {formData.is_union_member && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-green-700">金額未達二代健保起扣點，免扣補充保費</p>
+                  <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-medium">工會成員免扣二代健保</p>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* 動作按鈕 */}
+            {/* 按鈕 */}
             <div className="mt-6 space-y-3">
-              <button onClick={handleOpenSendModal}
-                disabled={loading || saving || !formData.staff_name || !formData.gross_amount}
-                className="btn-primary w-full flex items-center justify-center gap-2">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                建立並發送簽署連結
+              <button
+                onClick={() => handleSubmit(true)}
+                disabled={saving}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                建立並發送 LINE
               </button>
-
-              <button onClick={handleSaveDraft} disabled={loading || saving}
-                className="btn-secondary w-full flex items-center justify-center gap-2">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                儲存草稿
+              <button
+                onClick={() => handleSubmit(false)}
+                disabled={saving}
+                className="btn-secondary w-full flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                稍後發送（僅儲存）
               </button>
-            </div>
-
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-start gap-2">
-                <Info className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-gray-600">發送簽署連結後，對方可透過連結填寫資料並簽名。</p>
-              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 發送預覽 Modal */}
+      {/* 發送 LINE Modal */}
       {showSendModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Eye className="w-5 h-5" />
                 發送預覽
               </h3>
@@ -607,49 +576,71 @@ ${company?.name || '公司'} 勞報單已建立，請點擊以下連結完成簽
               </button>
             </div>
 
-            {/* 簽署連結 */}
-            <div className="mb-4">
-              <label className="input-label">簽署連結</label>
-              <div className="flex gap-2">
-                <input type="text" value={signUrl} readOnly className="input-field flex-1 text-sm" />
-                <button onClick={copySignUrl} className="btn-secondary px-3">
-                  <Copy className="w-4 h-4" />
-                </button>
+            <div className="p-4 space-y-4">
+              {/* 簽署連結 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">簽署連結</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={signUrl}
+                    readOnly
+                    className="input-field flex-1 bg-gray-50 text-sm"
+                  />
+                  <button onClick={copySignUrl} className="btn-secondary px-3">
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 發送群組 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">發送群組（LINE）</label>
+                <select
+                  value={selectedLineGroup}
+                  onChange={(e) => setSelectedLineGroup(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="">-- 選擇群組 --</option>
+                  {lineGroups.map(g => (
+                    <option key={g.id} value={g.group_id}>{g.group_name}</option>
+                  ))}
+                </select>
+                {lineGroups.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    尚無 LINE 群組，可直接複製連結手動發送
+                  </p>
+                )}
+              </div>
+
+              {/* 訊息內容 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">訊息內容（可編輯）</label>
+                <textarea
+                  value={customMessage}
+                  onChange={(e) => setCustomMessage(e.target.value)}
+                  rows={10}
+                  className="input-field text-sm"
+                />
               </div>
             </div>
 
-            {/* 發送對象 */}
-            <div className="mb-4">
-              <label className="input-label">發送對象（LINE）</label>
-              <select value={selectedLineTarget} onChange={(e) => setSelectedLineTarget(e.target.value)} className="input-field">
-                <option value="">-- 選擇發送對象 --</option>
-                {lineTargets.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.type === 'group' ? '👥 ' : '👤 '}{t.name}
-                  </option>
-                ))}
-              </select>
-              {lineTargets.length === 0 && (
-                <p className="text-xs text-gray-500 mt-1">尚無 LINE 聯絡人，可直接複製連結手動發送</p>
-              )}
-            </div>
-
-            {/* 訊息內容 */}
-            <div className="mb-4">
-              <label className="input-label">訊息內容（可編輯）</label>
-              <textarea value={customMessage} onChange={(e) => setCustomMessage(e.target.value)}
-                className="input-field font-mono text-sm" rows={10} />
-            </div>
-
-            {/* 按鈕 */}
-            <div className="flex gap-3">
-              <button onClick={() => { setShowSendModal(false); router.push('/dashboard/labor'); }}
-                className="btn-secondary flex-1">
+            <div className="p-4 border-t flex gap-3">
+              <button
+                onClick={() => {
+                  setShowSendModal(false);
+                  router.push('/dashboard/labor');
+                }}
+                className="btn-secondary flex-1"
+              >
                 稍後發送（僅儲存）
               </button>
-              <button onClick={handleSendLine} disabled={loading || !selectedLineTarget}
-                className="btn-primary flex-1 flex items-center justify-center gap-2">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+              <button
+                onClick={handleSendLine}
+                disabled={!selectedLineGroup}
+                className="btn-primary flex-1 flex items-center justify-center gap-2"
+              >
+                <MessageSquare className="w-4 h-4" />
                 發送 LINE
               </button>
             </div>
