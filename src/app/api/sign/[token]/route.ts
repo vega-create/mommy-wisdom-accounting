@@ -174,8 +174,8 @@ export async function POST(
         payable_number: payableNumber,
         vendor_type: 'individual',
         source_type: 'labor_report',
-        source_id: report.id,
         labor_report_id: report.id,
+        title: `勞報單 - ${report.staff_name}`,
         description: `勞報單 - ${report.staff_name}`,
         amount: report.net_amount,
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -186,14 +186,15 @@ export async function POST(
         payableData.vendor_id = vendorId;
       }
 
+      // 使用正確的表名 acct_payable_requests
       const { error: payableError } = await supabase
-        .from('acct_payables')
+        .from('acct_payable_requests')
         .insert(payableData);
 
       if (payableError) {
         console.error('Create payable error:', payableError);
       } else {
-        console.log('Sign POST - payable created');
+        console.log('Sign POST - payable created in acct_payable_requests');
       }
     } catch (payableError) {
       console.error('Create payable error (non-critical):', payableError);
