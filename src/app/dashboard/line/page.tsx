@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
-import { 
-  MessageCircle, Settings, Users, FileText, Send, 
+import {
+  MessageCircle, Settings, Users, FileText, Send,
   Plus, Edit2, Trash2, Eye, Check, X, RefreshCw,
   AlertCircle, CheckCircle, Clock, ChevronDown,
   Calendar, Play, Pause
@@ -76,7 +76,7 @@ type TabType = 'settings' | 'groups' | 'templates' | 'send' | 'schedules' | 'his
 export default function LinePage() {
   const { company } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('settings');
-  
+
   // Settings state
   const [settings, setSettings] = useState<LineSettings>({
     channel_access_token: '',
@@ -85,7 +85,7 @@ export default function LinePage() {
   });
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  
+
   // Groups state
   const [groups, setGroups] = useState<LineGroup[]>([]);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -98,7 +98,7 @@ export default function LinePage() {
     group_type: 'group' as 'group' | 'room' | 'user',
     description: ''
   });
-  
+
   // Templates state
   const [templates, setTemplates] = useState<LineTemplate[]>([]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -111,7 +111,7 @@ export default function LinePage() {
     category: '',
     content: ''
   });
-  
+
   // Send state
   const [sendForm, setSendForm] = useState({
     recipientType: 'group' as 'group' | 'user',
@@ -124,7 +124,7 @@ export default function LinePage() {
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
-  
+
   // History state
   const [messages, setMessages] = useState<LineMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -156,7 +156,7 @@ export default function LinePage() {
   const [scheduleVariables, setScheduleVariables] = useState<Record<string, string>>({});
 
   // ========== 模板管理函數 ==========
-  
+
   // 載入模板列表
   const handleLoadTemplates = async () => {
     if (!company?.id) return;
@@ -207,7 +207,7 @@ export default function LinePage() {
     try {
       const url = '/api/line/templates';
       const method = editingTemplate ? 'PUT' : 'POST';
-      const body = editingTemplate 
+      const body = editingTemplate
         ? { id: editingTemplate.id, ...templateForm }
         : { company_id: company.id, ...templateForm };
 
@@ -217,7 +217,7 @@ export default function LinePage() {
         body: JSON.stringify(body)
       });
       const result = await response.json();
-      
+
       if (result.success || result.data) {
         setShowTemplateModal(false);
         handleLoadTemplates();
@@ -253,7 +253,7 @@ export default function LinePage() {
   };
 
   // ========== 發送訊息函數 ==========
-  
+
   // 發送 LINE 訊息
   const handleSendMessage = async () => {
     if (!company?.id) return;
@@ -261,7 +261,7 @@ export default function LinePage() {
       alert('請選擇發送對象');
       return;
     }
-    
+
     let messageContent: string;
     if (sendForm.useTemplate) {
       const selectedTemplate = templates.find(t => t.id === sendForm.templateId);
@@ -274,7 +274,7 @@ export default function LinePage() {
     } else {
       messageContent = sendForm.customMessage;
     }
-    
+
     if (!messageContent) {
       alert('請選擇模板或輸入訊息內容');
       return;
@@ -297,7 +297,7 @@ export default function LinePage() {
         })
       });
       const result = await response.json();
-      
+
       if (result.success) {
         setSendSuccess(true);
         alert('訊息已發送！');
@@ -337,7 +337,7 @@ export default function LinePage() {
   }, [activeTab, company?.id]);
 
   // ========== 群組管理函數 ==========
-  
+
   // 載入群組列表
   const handleLoadGroups = async () => {
     if (!company?.id) return;
@@ -390,7 +390,7 @@ export default function LinePage() {
     try {
       const url = '/api/line/groups';
       const method = editingGroup ? 'PUT' : 'POST';
-      const body = editingGroup 
+      const body = editingGroup
         ? { id: editingGroup.id, ...groupForm }
         : { company_id: company.id, ...groupForm };
 
@@ -400,7 +400,7 @@ export default function LinePage() {
         body: JSON.stringify(body)
       });
       const result = await response.json();
-      
+
       if (result.success || result.data) {
         setShowGroupModal(false);
         handleLoadGroups(); // 重新載入
@@ -443,7 +443,7 @@ export default function LinePage() {
   }, [activeTab, company?.id]);
 
   // ========== 排程管理函數 ==========
-  
+
   // 載入排程列表
   const handleLoadSchedules = async () => {
     if (!company?.id) return;
@@ -524,48 +524,48 @@ export default function LinePage() {
     try {
       const url = '/api/line/schedules';
       const method = editingSchedule ? 'PUT' : 'POST';
-      
+
       // 根據排程類型決定要傳送的欄位
       const needsDayOfWeek = ['weekly', 'biweekly'].includes(scheduleForm.schedule_type);
       const needsDayOfMonth = ['monthly', 'twice_monthly', 'yearly'].includes(scheduleForm.schedule_type);
       const needsDayOfMonth2 = scheduleForm.schedule_type === 'twice_monthly';
       const needsMonth = scheduleForm.schedule_type === 'yearly';
-      
-      const body = editingSchedule 
-        ? { 
-            id: editingSchedule.id,
-            name: scheduleForm.name,
-            recipient_type: scheduleForm.recipient_type,
-            recipient_id: scheduleForm.recipient_id,
-            recipient_name: scheduleForm.recipient_name,
-            template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
-            custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
-            variables: scheduleForm.use_template ? scheduleVariables : {},
-            schedule_type: scheduleForm.schedule_type,
-            scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
-            schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
-            schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
-            schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
-            schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
-            schedule_month: needsMonth ? scheduleForm.schedule_month : null
-          }
-        : { 
-            company_id: company.id,
-            name: scheduleForm.name,
-            recipient_type: scheduleForm.recipient_type,
-            recipient_id: scheduleForm.recipient_id,
-            recipient_name: scheduleForm.recipient_name,
-            template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
-            custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
-            variables: scheduleForm.use_template ? scheduleVariables : {},
-            schedule_type: scheduleForm.schedule_type,
-            scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
-            schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
-            schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
-            schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
-            schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
-            schedule_month: needsMonth ? scheduleForm.schedule_month : null
-          };
+
+      const body = editingSchedule
+        ? {
+          id: editingSchedule.id,
+          name: scheduleForm.name,
+          recipient_type: scheduleForm.recipient_type,
+          recipient_id: scheduleForm.recipient_id,
+          recipient_name: scheduleForm.recipient_name,
+          template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
+          custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
+          variables: scheduleForm.use_template ? scheduleVariables : {},
+          schedule_type: scheduleForm.schedule_type,
+          scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
+          schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
+          schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
+          schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
+          schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
+          schedule_month: needsMonth ? scheduleForm.schedule_month : null
+        }
+        : {
+          company_id: company.id,
+          name: scheduleForm.name,
+          recipient_type: scheduleForm.recipient_type,
+          recipient_id: scheduleForm.recipient_id,
+          recipient_name: scheduleForm.recipient_name,
+          template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
+          custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
+          variables: scheduleForm.use_template ? scheduleVariables : {},
+          schedule_type: scheduleForm.schedule_type,
+          scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
+          schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
+          schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
+          schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
+          schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
+          schedule_month: needsMonth ? scheduleForm.schedule_month : null
+        };
 
       const response = await fetch(url, {
         method,
@@ -573,7 +573,7 @@ export default function LinePage() {
         body: JSON.stringify(body)
       });
       const result = await response.json();
-      
+
       if (result.success || result.data) {
         setShowScheduleModal(false);
         handleLoadSchedules();
@@ -692,18 +692,32 @@ export default function LinePage() {
   ];
 
   const handleTestConnection = async () => {
+    if (!company?.id) return;
     setIsTestingConnection(true);
     setConnectionStatus('idle');
-    
-    // 模擬 API 測試
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    if (settings.channel_access_token && settings.channel_secret) {
-      setConnectionStatus('success');
-    } else {
+
+    try {
+      const response = await fetch('/api/line/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setConnectionStatus('success');
+      } else {
+        setConnectionStatus('error');
+        if (result.error) {
+          alert(`連線失敗：${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('Test connection error:', error);
       setConnectionStatus('error');
+    } finally {
+      setIsTestingConnection(false);
     }
-    setIsTestingConnection(false);
   };
 
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -838,11 +852,10 @@ export default function LinePage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                   ? 'border-brand-primary-600 text-brand-primary-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                }`}
             >
               {tab.icon}
               {tab.label}
@@ -862,14 +875,12 @@ export default function LinePage() {
                 <span className="text-sm text-gray-500">啟用狀態</span>
                 <button
                   onClick={() => setSettings({ ...settings, is_active: !settings.is_active })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    settings.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings.is_active ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
               </div>
@@ -916,7 +927,7 @@ export default function LinePage() {
                     readOnly
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
                   />
-                  <button 
+                  <button
                     onClick={() => {
                       navigator.clipboard.writeText('https://mommy-wisdom-accounting.vercel.app/api/line/webhook');
                       alert('已複製到剪貼簿！');
@@ -945,7 +956,7 @@ export default function LinePage() {
                 )}
                 測試連線
               </button>
-              
+
               {connectionStatus === 'success' && (
                 <span className="text-sm text-green-600 flex items-center gap-1">
                   <CheckCircle className="w-4 h-4" /> 連線成功
@@ -956,9 +967,9 @@ export default function LinePage() {
                   <AlertCircle className="w-4 h-4" /> 連線失敗，請檢查設定
                 </span>
               )}
-              
+
               <div className="flex-1" />
-              
+
               <button
                 onClick={handleSaveSettings}
                 disabled={isSavingSettings}
@@ -1028,14 +1039,14 @@ export default function LinePage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            <button 
+                            <button
                               onClick={() => openEditGroupModal(group)}
                               className="p-1 text-gray-500 hover:text-brand-primary-600"
                               title="編輯"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleDeleteGroup(group.id)}
                               className="p-1 text-gray-500 hover:text-red-600"
                               title="刪除"
@@ -1102,11 +1113,11 @@ export default function LinePage() {
                       </div>
                       <span className="text-xs text-gray-400">使用 {template.usage_count || 0} 次</span>
                     </div>
-                    
+
                     <p className="text-sm text-gray-600 line-clamp-3 mb-3 whitespace-pre-line">
                       {template.content}
                     </p>
-                    
+
                     {template.variables && template.variables.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-3">
                         {template.variables.map((v) => (
@@ -1116,27 +1127,27 @@ export default function LinePage() {
                         ))}
                       </div>
                     )}
-                    
+
                     <div className="flex items-center justify-between pt-3 border-t">
                       <span className={`text-xs ${template.is_active ? 'text-green-600' : 'text-gray-400'}`}>
                         {template.is_active ? '● 啟用中' : '○ 已停用'}
                       </span>
                       <div className="flex items-center gap-2">
-                        <button 
+                        <button
                           onClick={() => setPreviewTemplate(template)}
                           className="p-1 text-gray-500 hover:text-brand-primary-600"
                           title="預覽"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button 
+                        <button
                           onClick={() => openEditTemplateModal(template)}
                           className="p-1 text-gray-500 hover:text-brand-primary-600"
                           title="編輯"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeleteTemplate(template.id)}
                           className="p-1 text-gray-500 hover:text-red-600"
                           title="刪除"
@@ -1207,8 +1218,8 @@ export default function LinePage() {
                       value={sendForm.recipientId}
                       onChange={(e) => {
                         const selectedGroup = groups.find(g => g.group_id === e.target.value);
-                        setSendForm({ 
-                          ...sendForm, 
+                        setSendForm({
+                          ...sendForm,
                           recipientId: e.target.value,
                           recipientName: selectedGroup?.group_name || ''
                         });
@@ -1420,12 +1431,12 @@ export default function LinePage() {
                           )}
                           {schedule.schedule_type === 'weekly' && (
                             <span className="text-purple-600">
-                              每週{['日','一','二','三','四','五','六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
+                              每週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
                             </span>
                           )}
                           {schedule.schedule_type === 'biweekly' && (
                             <span className="text-indigo-600">
-                              每兩週{['日','一','二','三','四','五','六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
+                              每兩週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
                             </span>
                           )}
                           {schedule.schedule_type === 'monthly' && (
@@ -1445,7 +1456,7 @@ export default function LinePage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
-                          {schedule.next_run_at 
+                          {schedule.next_run_at
                             ? new Date(schedule.next_run_at).toLocaleString('zh-TW')
                             : '-'
                           }
@@ -1465,7 +1476,7 @@ export default function LinePage() {
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             {schedule.status !== 'completed' && (
-                              <button 
+                              <button
                                 onClick={() => handleToggleSchedule(schedule.id, schedule.status)}
                                 className={`p-1 ${schedule.status === 'active' ? 'text-yellow-500 hover:text-yellow-600' : 'text-green-500 hover:text-green-600'}`}
                                 title={schedule.status === 'active' ? '暫停' : '啟用'}
@@ -1473,14 +1484,14 @@ export default function LinePage() {
                                 {schedule.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                               </button>
                             )}
-                            <button 
+                            <button
                               onClick={() => openEditScheduleModal(schedule)}
                               className="p-1 text-gray-500 hover:text-brand-primary-600"
                               title="編輯"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleDeleteSchedule(schedule.id)}
                               className="p-1 text-gray-500 hover:text-red-600"
                               title="刪除"
@@ -1511,7 +1522,7 @@ export default function LinePage() {
           <div className="p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">發送記錄</h2>
-              <button 
+              <button
                 onClick={handleLoadMessages}
                 disabled={isLoadingMessages}
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
@@ -1611,7 +1622,7 @@ export default function LinePage() {
                 <input
                   type="text"
                   value={groupForm.group_name}
-                  onChange={(e) => setGroupForm({...groupForm, group_name: e.target.value})}
+                  onChange={(e) => setGroupForm({ ...groupForm, group_name: e.target.value })}
                   placeholder="例：智慧媽咪內部群組"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -1621,7 +1632,7 @@ export default function LinePage() {
                 <input
                   type="text"
                   value={groupForm.group_id}
-                  onChange={(e) => setGroupForm({...groupForm, group_id: e.target.value})}
+                  onChange={(e) => setGroupForm({ ...groupForm, group_id: e.target.value })}
                   placeholder="C1234567890..."
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 font-mono"
                 />
@@ -1629,9 +1640,9 @@ export default function LinePage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">類型</label>
-                <select 
+                <select
                   value={groupForm.group_type}
-                  onChange={(e) => setGroupForm({...groupForm, group_type: e.target.value as 'group' | 'room' | 'user'})}
+                  onChange={(e) => setGroupForm({ ...groupForm, group_type: e.target.value as 'group' | 'room' | 'user' })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 >
                   <option value="group">群組</option>
@@ -1643,7 +1654,7 @@ export default function LinePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
                 <textarea
                   value={groupForm.description}
-                  onChange={(e) => setGroupForm({...groupForm, description: e.target.value})}
+                  onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
                   placeholder="選填"
                   rows={2}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
@@ -1685,7 +1696,7 @@ export default function LinePage() {
                   <input
                     type="text"
                     value={templateForm.name}
-                    onChange={(e) => setTemplateForm({...templateForm, name: e.target.value})}
+                    onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
                     placeholder="例：請款通知"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
@@ -1695,7 +1706,7 @@ export default function LinePage() {
                   <input
                     type="text"
                     value={templateForm.category}
-                    onChange={(e) => setTemplateForm({...templateForm, category: e.target.value})}
+                    onChange={(e) => setTemplateForm({ ...templateForm, category: e.target.value })}
                     placeholder="例：請款、發票"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
@@ -1705,7 +1716,7 @@ export default function LinePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">模板內容 *</label>
                 <textarea
                   value={templateForm.content}
-                  onChange={(e) => setTemplateForm({...templateForm, content: e.target.value})}
+                  onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
                   placeholder="使用 {{變數名稱}} 來插入動態內容"
                   rows={8}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 font-mono text-sm"
@@ -1781,7 +1792,7 @@ export default function LinePage() {
                 <input
                   type="text"
                   value={scheduleForm.name}
-                  onChange={(e) => setScheduleForm({...scheduleForm, name: e.target.value})}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, name: e.target.value })}
                   placeholder="例：每月請款通知"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -1795,7 +1806,7 @@ export default function LinePage() {
                     <input
                       type="radio"
                       checked={scheduleForm.recipient_type === 'group'}
-                      onChange={() => setScheduleForm({...scheduleForm, recipient_type: 'group', recipient_id: '', recipient_name: ''})}
+                      onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'group', recipient_id: '', recipient_name: '' })}
                       className="text-brand-primary-600"
                     />
                     <span>群組</span>
@@ -1804,7 +1815,7 @@ export default function LinePage() {
                     <input
                       type="radio"
                       checked={scheduleForm.recipient_type === 'user'}
-                      onChange={() => setScheduleForm({...scheduleForm, recipient_type: 'user', recipient_id: '', recipient_name: ''})}
+                      onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'user', recipient_id: '', recipient_name: '' })}
                       className="text-brand-primary-600"
                     />
                     <span>個人</span>
@@ -1832,7 +1843,7 @@ export default function LinePage() {
                   <input
                     type="text"
                     value={scheduleForm.recipient_id}
-                    onChange={(e) => setScheduleForm({...scheduleForm, recipient_id: e.target.value})}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, recipient_id: e.target.value })}
                     placeholder="輸入 LINE User ID (U...)"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 font-mono"
                   />
@@ -1847,7 +1858,7 @@ export default function LinePage() {
                     <input
                       type="radio"
                       checked={scheduleForm.use_template}
-                      onChange={() => setScheduleForm({...scheduleForm, use_template: true})}
+                      onChange={() => setScheduleForm({ ...scheduleForm, use_template: true })}
                       className="text-brand-primary-600"
                     />
                     <span>使用模板</span>
@@ -1856,7 +1867,7 @@ export default function LinePage() {
                     <input
                       type="radio"
                       checked={!scheduleForm.use_template}
-                      onChange={() => setScheduleForm({...scheduleForm, use_template: false})}
+                      onChange={() => setScheduleForm({ ...scheduleForm, use_template: false })}
                       className="text-brand-primary-600"
                     />
                     <span>自訂內容</span>
@@ -1867,7 +1878,7 @@ export default function LinePage() {
                     <select
                       value={scheduleForm.template_id}
                       onChange={(e) => {
-                        setScheduleForm({...scheduleForm, template_id: e.target.value});
+                        setScheduleForm({ ...scheduleForm, template_id: e.target.value });
                         // 重置變數值
                         const selectedTemplate = templates.find(t => t.id === e.target.value);
                         if (selectedTemplate?.variables) {
@@ -1916,7 +1927,7 @@ export default function LinePage() {
                 ) : (
                   <textarea
                     value={scheduleForm.custom_content}
-                    onChange={(e) => setScheduleForm({...scheduleForm, custom_content: e.target.value})}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, custom_content: e.target.value })}
                     placeholder="輸入訊息內容..."
                     rows={4}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
@@ -1940,12 +1951,11 @@ export default function LinePage() {
                     <button
                       key={type.value}
                       type="button"
-                      onClick={() => setScheduleForm({...scheduleForm, schedule_type: type.value as any})}
-                      className={`px-3 py-2 rounded-lg border text-sm ${
-                        scheduleForm.schedule_type === type.value
+                      onClick={() => setScheduleForm({ ...scheduleForm, schedule_type: type.value as any })}
+                      className={`px-3 py-2 rounded-lg border text-sm ${scheduleForm.schedule_type === type.value
                           ? 'bg-brand-primary-600 text-white border-brand-primary-600'
                           : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
+                        }`}
                     >
                       {type.label}
                     </button>
@@ -1960,7 +1970,7 @@ export default function LinePage() {
                   <input
                     type="datetime-local"
                     value={scheduleForm.scheduled_at}
-                    onChange={(e) => setScheduleForm({...scheduleForm, scheduled_at: e.target.value})}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_at: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
                 </div>
@@ -1972,7 +1982,7 @@ export default function LinePage() {
                   <input
                     type="time"
                     value={scheduleForm.schedule_time}
-                    onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
                 </div>
@@ -1984,7 +1994,7 @@ export default function LinePage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">每週幾</label>
                     <select
                       value={scheduleForm.schedule_day_of_week}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_week: parseInt(e.target.value)})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_week: parseInt(e.target.value) })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     >
                       <option value={0}>週日</option>
@@ -2001,7 +2011,7 @@ export default function LinePage() {
                     <input
                       type="time"
                       value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   </div>
@@ -2014,10 +2024,10 @@ export default function LinePage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">每月幾號</label>
                     <select
                       value={scheduleForm.schedule_day_of_month}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_month: parseInt(e.target.value)})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     >
-                      {Array.from({length: 31}, (_, i) => i + 1).map((day) => (
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                         <option key={day} value={day}>{day} 日</option>
                       ))}
                     </select>
@@ -2027,7 +2037,7 @@ export default function LinePage() {
                     <input
                       type="time"
                       value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   </div>
@@ -2041,7 +2051,7 @@ export default function LinePage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">每兩週的週幾</label>
                     <select
                       value={scheduleForm.schedule_day_of_week}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_week: parseInt(e.target.value)})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_week: parseInt(e.target.value) })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     >
                       <option value={0}>週日</option>
@@ -2058,7 +2068,7 @@ export default function LinePage() {
                     <input
                       type="time"
                       value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   </div>
@@ -2073,10 +2083,10 @@ export default function LinePage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">第一個日期</label>
                       <select
                         value={scheduleForm.schedule_day_of_month}
-                        onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_month: parseInt(e.target.value)})}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                       >
-                        {Array.from({length: 31}, (_, i) => i + 1).map((day) => (
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                           <option key={day} value={day}>{day} 日</option>
                         ))}
                       </select>
@@ -2085,10 +2095,10 @@ export default function LinePage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">第二個日期</label>
                       <select
                         value={scheduleForm.schedule_day_of_month_2}
-                        onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_month_2: parseInt(e.target.value)})}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month_2: parseInt(e.target.value) })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                       >
-                        {Array.from({length: 31}, (_, i) => i + 1).map((day) => (
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                           <option key={day} value={day}>{day} 日</option>
                         ))}
                       </select>
@@ -2099,7 +2109,7 @@ export default function LinePage() {
                     <input
                       type="time"
                       value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   </div>
@@ -2114,10 +2124,10 @@ export default function LinePage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">月份</label>
                       <select
                         value={scheduleForm.schedule_month}
-                        onChange={(e) => setScheduleForm({...scheduleForm, schedule_month: parseInt(e.target.value)})}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_month: parseInt(e.target.value) })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                       >
-                        {Array.from({length: 12}, (_, i) => i + 1).map((month) => (
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
                           <option key={month} value={month}>{month} 月</option>
                         ))}
                       </select>
@@ -2126,10 +2136,10 @@ export default function LinePage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
                       <select
                         value={scheduleForm.schedule_day_of_month}
-                        onChange={(e) => setScheduleForm({...scheduleForm, schedule_day_of_month: parseInt(e.target.value)})}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                       >
-                        {Array.from({length: 31}, (_, i) => i + 1).map((day) => (
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                           <option key={day} value={day}>{day} 日</option>
                         ))}
                       </select>
@@ -2140,7 +2150,7 @@ export default function LinePage() {
                     <input
                       type="time"
                       value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({...scheduleForm, schedule_time: e.target.value})}
+                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   </div>
