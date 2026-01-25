@@ -2,18 +2,20 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import SignatureCanvas from 'react-signature-canvas';
 
-export default function SignContractPage() {
+export default function ContractSignPage() {
   const params = useParams();
   const token = params.token as string;
   const [contract, setContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [signing, setSigning] = useState(false);
   const [signed, setSigned] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [signerName, setSignerName] = useState('');
-  const sigCanvas = useRef<SignatureCanvas>(null);
+  const [signatureDataUrl, setSignatureDataUrl] = useState('');
+  const [stampFile, setStampFile] = useState<string>('');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
     fetchContract();
@@ -27,132 +29,282 @@ export default function SignContractPage() {
         setError(data.error);
       } else {
         setContract(data);
-        if (data.customer_signed_at) setSigned(true);
+        if (data.status === 'signed') setSigned(true);
       }
     } catch (e) {
       setError('無法載入合約');
-    } finally {
-      setLoading(false);
+    }
+    setLoading(false);
+  };
+
+  const initCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+  };
+
+  useEffect(() => {
+    initCanvas();
+  }, [contract]);
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) setSignatureDataUrl(canvas.toDataURL());
+  };
+
+  const clearSignature = () => {
+    initCanvas();
+    setSignatureDataUrl('');
+  };
+
+  const handleStampUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setStampFile(ev.target?.result as string);
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleSign = async () => {
-    if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
-      alert('請先簽名');
-      return;
-    }
-    if (!signerName.trim()) {
-      alert('請輸入姓名');
-      return;
-    }
-
+  const handleSubmit = async () => {
+    if (!signerName.trim()) { alert('請輸入簽署人姓名'); return; }
+    if (!signatureDataUrl) { alert('請簽名'); return; }
     setSigning(true);
-    try {
-      const signature = sigCanvas.current.toDataURL();
-      const res = await fetch(`/api/sign/${token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signature, signer_name: signerName }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        alert(data.error);
-      } else {
-        setSigned(true);
-      }
-    } catch (e) {
-      alert('簽署失敗');
-    } finally {
-      setSigning(false);
-    }
+    const res = await fetch(`/api/sign/${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: signatureDataUrl, signer_name: signerName, company_stamp: stampFile }),
+    });
+    const data = await res.json();
+    setSigning(false);
+    if (data.success) setSigned(true);
+    else alert(data.error || '簽署失敗');
   };
 
-  const clearSignature = () => sigCanvas.current?.clear();
+  const handlePrint = () => window.print();
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">載入中...</div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">{error}</div>;
-  if (!contract) return <div className="min-h-screen flex items-center justify-center">找不到合約</div>;
+  if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
+  if (!contract) return <div className="min-h-screen flex items-center justify-center text-red-600">無法載入合約</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">{contract.title}</h1>
-          <p className="text-gray-500 mb-4">合約編號：{contract.contract_number}</p>
-          
-          <div className="border-t pt-4 mt-4">
-            <h2 className="font-semibold mb-2">合約內容</h2>
-            <p className="text-gray-600 whitespace-pre-wrap">{contract.description}</p>
+    <div className="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
+      <div className="max-w-4xl mx-auto bg-white shadow-lg print:shadow-none">
+        {/* 合約標題 */}
+        <div className="p-8 border-b-2 border-gray-800">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold mb-2">服務合約書</h1>
+            <p className="text-gray-600">Contract Agreement</p>
           </div>
-
-          <div className="border-t pt-4 mt-4">
-            <h2 className="font-semibold mb-2">項目明細</h2>
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-2">項目</th>
-                  <th className="text-right p-2">數量</th>
-                  <th className="text-right p-2">單價</th>
-                  <th className="text-right p-2">金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contract.items?.map((item: any, i: number) => (
-                  <tr key={i} className="border-t">
-                    <td className="p-2">{item.item_name}</td>
-                    <td className="text-right p-2">{item.quantity} {item.unit}</td>
-                    <td className="text-right p-2">${item.unit_price?.toLocaleString()}</td>
-                    <td className="text-right p-2">${item.amount?.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t font-semibold">
-                <tr><td colSpan={3} className="text-right p-2">小計</td><td className="text-right p-2">${contract.subtotal?.toLocaleString()}</td></tr>
-                <tr><td colSpan={3} className="text-right p-2">稅額</td><td className="text-right p-2">${contract.tax_amount?.toLocaleString()}</td></tr>
-                <tr className="text-lg"><td colSpan={3} className="text-right p-2">總計</td><td className="text-right p-2 text-red-600">${contract.total_amount?.toLocaleString()}</td></tr>
-              </tfoot>
-            </table>
+          <div className="flex justify-between mt-6 text-sm">
+            <div>合約編號：{contract.contract_number}</div>
+            <div>日期：{contract.contract_date}</div>
           </div>
-
-          {contract.terms_and_conditions && (
-            <div className="border-t pt-4 mt-4">
-              <h2 className="font-semibold mb-2">條款與條件</h2>
-              <p className="text-gray-600 text-sm whitespace-pre-wrap">{contract.terms_and_conditions}</p>
-            </div>
-          )}
         </div>
 
-        {signed ? (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-            <div className="text-green-600 text-xl font-bold mb-2">✓ 已完成簽署</div>
-            <p className="text-gray-600">感謝您的簽署，合約已生效。</p>
+        {/* 雙方資訊 */}
+        <div className="p-8 grid grid-cols-2 gap-8 border-b">
+          <div>
+            <h3 className="font-bold text-lg mb-3 border-b pb-2">甲方（委託方）</h3>
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-500 w-20 inline-block">公司名稱：</span>{contract.customer_name}</p>
+              {contract.customer_tax_id && <p><span className="text-gray-500 w-20 inline-block">統一編號：</span>{contract.customer_tax_id}</p>}
+              {contract.contact_person && <p><span className="text-gray-500 w-20 inline-block">聯絡人：</span>{contract.contact_person}</p>}
+              {contract.customer_phone && <p><span className="text-gray-500 w-20 inline-block">電話：</span>{contract.customer_phone}</p>}
+              {contract.customer_email && <p><span className="text-gray-500 w-20 inline-block">Email：</span>{contract.customer_email}</p>}
+            </div>
           </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="font-semibold mb-4">請在下方簽名</h2>
-            <input
-              type="text"
-              placeholder="請輸入您的姓名"
-              value={signerName}
-              onChange={(e) => setSignerName(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2 mb-4"
-            />
-            <div className="border-2 border-dashed border-gray-300 rounded-lg mb-4">
-              <SignatureCanvas
-                ref={sigCanvas}
-                canvasProps={{ className: 'w-full h-48' }}
-                backgroundColor="white"
-              />
+          <div>
+            <h3 className="font-bold text-lg mb-3 border-b pb-2">乙方（服務方）</h3>
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-500 w-20 inline-block">公司名稱：</span>{contract.company?.name}</p>
+              {contract.company?.tax_id && <p><span className="text-gray-500 w-20 inline-block">統一編號：</span>{contract.company?.tax_id}</p>}
+              {contract.company?.phone && <p><span className="text-gray-500 w-20 inline-block">電話：</span>{contract.company?.phone}</p>}
+              {contract.company?.email && <p><span className="text-gray-500 w-20 inline-block">Email：</span>{contract.company?.email}</p>}
             </div>
-            <div className="flex gap-4">
-              <button onClick={clearSignature} className="px-4 py-2 border rounded-lg hover:bg-gray-50">清除</button>
-              <button onClick={handleSign} disabled={signing} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
-                {signing ? '簽署中...' : '確認簽署'}
-              </button>
-            </div>
+          </div>
+        </div>
+
+        {/* 合約內容 */}
+        <div className="p-8 border-b">
+          <h3 className="font-bold text-lg mb-4">壹、合約標的</h3>
+          <p className="mb-4 font-medium">{contract.title}</p>
+          {contract.description && <p className="text-gray-700 whitespace-pre-wrap">{contract.description}</p>}
+        </div>
+
+        {/* 服務項目明細 */}
+        <div className="p-8 border-b">
+          <h3 className="font-bold text-lg mb-4">貳、服務項目與費用</h3>
+          <table className="w-full border-collapse border">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border p-2 text-left">項目名稱</th>
+                <th className="border p-2 text-center w-20">數量</th>
+                <th className="border p-2 text-center w-16">單位</th>
+                <th className="border p-2 text-right w-28">單價</th>
+                <th className="border p-2 text-right w-28">小計</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contract.items?.map((item: any, i: number) => (
+                <tr key={i}>
+                  <td className="border p-2">{item.item_name}</td>
+                  <td className="border p-2 text-center">{item.quantity}</td>
+                  <td className="border p-2 text-center">{item.unit}</td>
+                  <td className="border p-2 text-right">${item.unit_price?.toLocaleString()}</td>
+                  <td className="border p-2 text-right">${item.amount?.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} className="border p-2 text-right font-medium">小計</td>
+                <td className="border p-2 text-right">${contract.subtotal?.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td colSpan={4} className="border p-2 text-right font-medium">稅額 (5%)</td>
+                <td className="border p-2 text-right">${contract.tax_amount?.toLocaleString()}</td>
+              </tr>
+              <tr className="bg-gray-50">
+                <td colSpan={4} className="border p-2 text-right font-bold">合計金額</td>
+                <td className="border p-2 text-right font-bold text-lg">${contract.total_amount?.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* 付款條件 */}
+        {contract.payment_terms && (
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">參、付款條件</h3>
+            <p className="whitespace-pre-wrap">{contract.payment_terms}</p>
           </div>
         )}
+
+        {/* 條款 */}
+        {contract.terms_and_conditions && (
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">肆、條款與條件</h3>
+            <p className="whitespace-pre-wrap text-sm">{contract.terms_and_conditions}</p>
+          </div>
+        )}
+
+        {/* 合約期間 */}
+        {(contract.start_date || contract.end_date) && (
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">伍、合約期間</h3>
+            <p>自 {contract.start_date || '___'} 起至 {contract.end_date || '___'} 止</p>
+          </div>
+        )}
+
+        {/* 簽署區域 */}
+        <div className="p-8">
+          <h3 className="font-bold text-lg mb-6">簽署欄</h3>
+          <div className="grid grid-cols-2 gap-8">
+            {/* 甲方簽署 */}
+            <div className="border-2 p-4 rounded-lg">
+              <h4 className="font-bold mb-4 text-center">甲方（委託方）</h4>
+              {signed ? (
+                <div className="text-center">
+                  <p className="text-green-600 font-bold mb-2">✓ 已簽署</p>
+                  <p className="text-sm">簽署人：{contract.customer_signed_name}</p>
+                  <p className="text-sm text-gray-500">{new Date(contract.customer_signed_at).toLocaleString()}</p>
+                  {contract.customer_signature && <img src={contract.customer_signature} alt="簽名" className="mx-auto mt-2 max-h-20 border" />}
+                </div>
+              ) : (
+                <div className="print:hidden">
+                  <div className="mb-4">
+                    <label className="block text-sm mb-1">簽署人姓名 *</label>
+                    <input type="text" value={signerName} onChange={(e) => setSignerName(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="請輸入姓名" />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm mb-1">簽名 *</label>
+                    <canvas ref={canvasRef} width={280} height={100} className="border rounded bg-white cursor-crosshair w-full"
+                      onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
+                    <button onClick={clearSignature} className="text-sm text-blue-600 hover:underline mt-1">清除重簽</button>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm mb-1">公司大小章（選填）</label>
+                    <input type="file" accept="image/*" onChange={handleStampUpload} className="text-sm" />
+                    {stampFile && <img src={stampFile} alt="公司章" className="mt-2 max-h-16 border" />}
+                  </div>
+                  <button onClick={handleSubmit} disabled={signing} className="w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                    {signing ? '簽署中...' : '確認簽署'}
+                  </button>
+                </div>
+              )}
+              <div className="hidden print:block h-32 border-t mt-4 pt-4">
+                <p className="text-sm text-gray-500">簽名：________________</p>
+                <p className="text-sm text-gray-500 mt-8">日期：________________</p>
+                <p className="text-sm text-gray-500 mt-4">（蓋公司大小章）</p>
+              </div>
+            </div>
+
+            {/* 乙方簽署 */}
+            <div className="border-2 p-4 rounded-lg">
+              <h4 className="font-bold mb-4 text-center">乙方（服務方）</h4>
+              <div className="text-center">
+                <p className="font-medium">{contract.company?.name}</p>
+                {contract.company?.logo_url && <img src={contract.company.logo_url} alt="公司章" className="mx-auto mt-2 max-h-20" />}
+              </div>
+              <div className="hidden print:block h-32 border-t mt-4 pt-4">
+                <p className="text-sm text-gray-500">代表人：________________</p>
+                <p className="text-sm text-gray-500 mt-8">日期：________________</p>
+                <p className="text-sm text-gray-500 mt-4">（蓋公司大小章）</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 列印/下載按鈕 */}
+        <div className="p-8 border-t flex gap-4 print:hidden">
+          <button onClick={handlePrint} className="flex-1 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50">
+            🖨️ 列印合約 / 下載 PDF
+          </button>
+        </div>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+        }
+      `}</style>
     </div>
   );
 }

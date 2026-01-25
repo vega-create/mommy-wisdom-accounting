@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
-export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+export async function GET(request: NextRequest, { params }: { params: { token: string } }) {
+  const supabase = await createClient();
+  const token = params.token;
 
   const { data, error } = await supabase
     .from('acct_contracts')
@@ -16,13 +16,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
   }
 
-  return NextResponse.json(data);
+  // 取得公司資訊
+  const { data: company } = await supabase
+    .from('acct_companies')
+    .select('name, tax_id, address, phone, email, logo_url')
+    .eq('id', data.company_id)
+    .single();
+
+  return NextResponse.json({ ...data, company });
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+export async function POST(request: NextRequest, { params }: { params: { token: string } }) {
+  const supabase = await createClient();
+  const token = params.token;
   const body = await request.json();
-  const { signature, signer_name } = body;
+  const { signature, signer_name, company_stamp } = body;
 
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
@@ -31,6 +39,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .update({
       customer_signature: signature,
       customer_signed_name: signer_name,
+      customer_stamp: company_stamp,
       customer_signed_at: new Date().toISOString(),
       customer_signed_ip: ip,
       status: 'signed',
