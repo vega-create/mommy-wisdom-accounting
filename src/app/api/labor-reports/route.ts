@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
       withholding_tax: withholdingTax,
       nhi_premium: nhiPremium,
       net_amount: netAmount,
+      total_income: gross_amount, // total_income = gross_amount
       status,
       sign_token: signToken,
       sign_url: signUrl,
