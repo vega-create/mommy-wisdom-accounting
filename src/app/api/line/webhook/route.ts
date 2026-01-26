@@ -11,7 +11,10 @@ const supabase = createClient(
 const LINE_API_URL = 'https://api.line.me/v2/bot/message/reply';
 
 async function replyMessage(replyToken: string, accessToken: string, text: string) {
-  await fetch(LINE_API_URL, {
+  console.log('Replying with token:', replyToken?.substring(0, 20) + '...');
+  console.log('Access token length:', accessToken?.length);
+  
+  const res = await fetch(LINE_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -22,6 +25,10 @@ async function replyMessage(replyToken: string, accessToken: string, text: strin
       messages: [{ type: 'text', text }]
     }),
   });
+  
+  const result = await res.text();
+  console.log('LINE reply response:', res.status, result);
+  return res;
 }
 
 export async function POST(request: NextRequest) {
@@ -30,11 +37,14 @@ export async function POST(request: NextRequest) {
     const events = JSON.parse(body);
     console.log('LINE Webhook received:', JSON.stringify(events, null, 2));
 
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsError } = await supabase
       .from('acct_line_settings')
       .select('channel_access_token')
       .limit(1)
       .single();
+
+    console.log('Settings error:', settingsError);
+    console.log('Has access token:', !!settings?.channel_access_token);
 
     const accessToken = settings?.channel_access_token;
 
@@ -46,8 +56,10 @@ export async function POST(request: NextRequest) {
 
       if (event.type === 'message' && event.message?.type === 'text') {
         const text = event.message.text.trim().toLowerCase();
+        console.log('Received text:', text);
         
         if (text === '!groupid' || text === '/groupid' || text === 'groupid') {
+          console.log('GroupID command detected!');
           if (accessToken && replyToken) {
             let reply = '';
             if (sourceType === 'group' && groupId) {
@@ -59,7 +71,10 @@ export async function POST(request: NextRequest) {
             } else {
               reply = '無法取得 ID';
             }
+            console.log('Sending reply:', reply);
             await replyMessage(replyToken, accessToken, reply);
+          } else {
+            console.log('Missing token or replyToken', { hasAccessToken: !!accessToken, hasReplyToken: !!replyToken });
           }
           continue;
         }
