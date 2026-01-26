@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 // GET - 取得外包人員列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const search = searchParams.get('search');
@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
 // POST - 新增外包人員
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     console.log('Creating freelancer:', body);
 
@@ -119,7 +120,6 @@ export async function POST(request: NextRequest) {
       is_active: true,
     };
 
-    // 可選欄位
     if (english_name) insertData.english_name = english_name;
     if (id_number) insertData.id_number = id_number;
     if (birthday) insertData.birthday = birthday;
@@ -134,8 +134,6 @@ export async function POST(request: NextRequest) {
     if (bank_account_name) insertData.bank_account_name = bank_account_name;
     if (notes) insertData.notes = notes;
     insertData.is_union_member = is_union_member;
-
-    // 判斷資料是否完整
     insertData.is_complete = !!(id_number && bank_code && bank_account);
 
     const { data, error } = await supabase
@@ -153,5 +151,91 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating freelancer:', error);
     return NextResponse.json({ error: '新增外包人員失敗' }, { status: 500 });
+  }
+}
+
+// PUT - 更新外包人員
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const body = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: '缺少 id' }, { status: 400 });
+    }
+
+    const updateData: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    const allowedFields = [
+      'name', 'english_name', 'id_number', 'birthday', 'phone', 'email',
+      'address', 'line_user_id', 'line_display_name', 'bank_code', 'bank_name',
+      'bank_account', 'bank_account_name', 'is_union_member', 'notes', 'is_active'
+    ];
+
+    allowedFields.forEach(field => {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field];
+      }
+    });
+
+    // 更新完整性判斷
+    if (body.id_number !== undefined || body.bank_code !== undefined || body.bank_account !== undefined) {
+      const { data: current } = await supabase
+        .from('acct_freelancers')
+        .select('id_number, bank_code, bank_account')
+        .eq('id', id)
+        .single();
+
+      const idNum = body.id_number ?? current?.id_number;
+      const bankCode = body.bank_code ?? current?.bank_code;
+      const bankAcct = body.bank_account ?? current?.bank_account;
+      updateData.is_complete = !!(idNum && bankCode && bankAcct);
+    }
+
+    const { data, error } = await supabase
+      .from('acct_freelancers')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Database update error:', error);
+      return NextResponse.json({ error: `更新失敗: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data });
+  } catch (error) {
+    console.error('Error updating freelancer:', error);
+    return NextResponse.json({ error: '更新外包人員失敗' }, { status: 500 });
+  }
+}
+
+// DELETE - 刪除外包人員
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: '缺少 id' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('acct_freelancers')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting freelancer:', error);
+    return NextResponse.json({ error: '刪除外包人員失敗' }, { status: 500 });
   }
 }
