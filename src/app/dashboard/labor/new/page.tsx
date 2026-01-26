@@ -103,12 +103,14 @@ export default function NewLaborReportPage() {
   useEffect(() => {
     if (!company?.id) return;
 
-    // 載入外包人員
-    fetch(`/api/freelancers?company_id=${company.id}`)
+    // 載入外包人員（根據 staff_type 過濾）
+    const freelancerUrl = `/api/freelancers?company_id=${company.id}&staff_type=${formData.staff_type}`;
+    fetch(freelancerUrl)
       .then(res => res.json())
       .then(json => {
         console.log('Loaded freelancers:', json.data);
         if (json.data) setFreelancers(json.data);
+        else if (Array.isArray(json)) setFreelancers(json);
       })
       .catch(err => console.error('Error loading freelancers:', err));
 
@@ -124,10 +126,11 @@ export default function NewLaborReportPage() {
     fetch(`/api/line/groups?company_id=${company.id}`)
       .then(res => res.json())
       .then(json => {
-        if (json.data) setLineGroups(json.data.filter((g: LineGroup) => g.is_active));
+        const groups = Array.isArray(json) ? json : (json.data || []);
+        setLineGroups(groups.filter((g: LineGroup) => g.is_active));
       })
       .catch(() => { });
-  }, [company?.id]);
+  }, [company?.id, formData.staff_type]);
 
   // 選擇人員時自動帶入資料
   const handleFreelancerSelect = (freelancerId: string) => {
@@ -318,8 +321,8 @@ ${url}
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, staff_type: 'external' }))}
                   className={`p-4 rounded-xl border-2 text-left transition-all ${formData.staff_type === 'external'
-                      ? 'border-brand-primary-500 bg-brand-primary-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:border-gray-300'
                     }`}
                 >
                   <div className="font-medium text-gray-900">外部人員</div>
@@ -329,8 +332,8 @@ ${url}
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, staff_type: 'internal' }))}
                   className={`p-4 rounded-xl border-2 text-left transition-all ${formData.staff_type === 'internal'
-                      ? 'border-brand-primary-500 bg-brand-primary-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:border-gray-300'
                     }`}
                 >
                   <div className="font-medium text-gray-900">內部人員</div>
@@ -427,8 +430,8 @@ ${url}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, income_type_code: type.code }))}
                       className={`p-3 rounded-lg border text-left transition-all ${formData.income_type_code === type.code
-                          ? 'border-brand-primary-500 bg-brand-primary-50'
-                          : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-brand-primary-500 bg-brand-primary-50'
+                        : 'border-gray-200 hover:border-gray-300'
                         }`}
                     >
                       <div className="font-medium text-sm">{type.code} - {type.name}</div>

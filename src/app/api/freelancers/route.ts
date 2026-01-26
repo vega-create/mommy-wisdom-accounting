@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const companyId = searchParams.get('company_id');
     const search = searchParams.get('search');
     const activeOnly = searchParams.get('active') !== 'false';
+    const staffType = searchParams.get('staff_type');
 
     if (!companyId) {
       return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
@@ -24,6 +25,9 @@ export async function GET(request: NextRequest) {
 
     if (activeOnly) {
       query = query.eq('is_active', true);
+    }
+    if (staffType) {
+      query = query.eq('staff_type', staffType);
     }
 
     const { data, error } = await query;

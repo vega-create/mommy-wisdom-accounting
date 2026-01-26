@@ -20,7 +20,6 @@ import {
   RefreshCw,
   Calendar,
   X,
-  Link as LinkIcon,
   Copy,
 } from 'lucide-react';
 
@@ -70,18 +69,18 @@ export default function LaborReportsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [staffTypeFilter, setStaffTypeFilter] = useState<string>('all');
-  
+
   // 時間篩選
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  
+
   // 刪除確認
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   // 載入資料
   const loadReports = async () => {
     if (!company?.id) return;
-    
+
     setIsLoading(true);
     try {
       const params = new URLSearchParams({ company_id: company.id });
@@ -90,7 +89,7 @@ export default function LaborReportsPage() {
 
       const res = await fetch(`/api/labor-reports?${params}`);
       const json = await res.json();
-      
+
       if (json.data) {
         setLaborReports(json.data);
       }
@@ -107,11 +106,11 @@ export default function LaborReportsPage() {
 
   // 篩選邏輯（含時間）
   const filteredReports = laborReports.filter(report => {
-    const matchSearch = !searchTerm || 
+    const matchSearch = !searchTerm ||
       report.staff_name.includes(searchTerm) ||
       report.report_number.includes(searchTerm) ||
       (report.work_description && report.work_description.includes(searchTerm));
-    
+
     // 時間篩選
     let matchDate = true;
     if (dateFrom) {
@@ -120,7 +119,7 @@ export default function LaborReportsPage() {
     if (dateTo) {
       matchDate = matchDate && report.created_at <= dateTo + 'T23:59:59';
     }
-    
+
     return matchSearch && matchDate;
   });
 
@@ -137,7 +136,7 @@ export default function LaborReportsPage() {
     try {
       const res = await fetch(`/api/labor-reports/${id}`, { method: 'DELETE' });
       const json = await res.json();
-      
+
       if (json.success) {
         setLaborReports(prev => prev.filter(r => r.id !== id));
         setDeleteId(null);
@@ -349,7 +348,7 @@ export default function LaborReportsPage() {
               </button>
             )}
             <div className="ml-auto">
-              <button 
+              <button
                 onClick={handleExport}
                 className="btn-secondary flex items-center gap-2"
                 disabled={filteredReports.length === 0}
@@ -368,33 +367,15 @@ export default function LaborReportsPage() {
           <table className="w-full">
             <thead className="bg-brand-primary-50 border-b border-brand-primary-100">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">
-                  單號
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">
-                  人員
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">
-                  服務內容
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">
-                  服務期間
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">
-                  應稅所得
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">
-                  扣繳/健保
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">
-                  實付金額
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-brand-primary-700 uppercase">
-                  狀態
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-brand-primary-700 uppercase">
-                  操作
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">單號</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">人員</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">服務內容</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-brand-primary-700 uppercase">服務期間</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">應稅所得</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">扣繳/健保</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-brand-primary-700 uppercase">實付金額</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-brand-primary-700 uppercase">狀態</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-brand-primary-700 uppercase">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -410,10 +391,7 @@ export default function LaborReportsPage() {
                   <td colSpan={9} className="px-4 py-12 text-center">
                     <FileCheck className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                     <p className="text-gray-500">沒有找到符合條件的勞報單</p>
-                    <Link
-                      href="/dashboard/labor/new"
-                      className="btn-primary mt-4 inline-flex items-center gap-2"
-                    >
+                    <Link href="/dashboard/labor/new" className="btn-primary mt-4 inline-flex items-center gap-2">
                       <Plus className="w-4 h-4" />
                       新增第一筆勞報單
                     </Link>
@@ -425,16 +403,11 @@ export default function LaborReportsPage() {
                   return (
                     <tr key={report.id} className="hover:bg-brand-primary-50/50 transition-colors">
                       <td className="px-4 py-4">
-                        <Link 
-                          href={`/dashboard/labor/${report.id}`}
-                          className="font-medium text-brand-primary-700 hover:underline"
-                        >
+                        <Link href={`/dashboard/labor/${report.id}`} className="font-medium text-brand-primary-700 hover:underline">
                           {report.report_number}
                         </Link>
                         {report.billing_request && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            關聯：{report.billing_request.billing_number}
-                          </p>
+                          <p className="text-xs text-gray-500 mt-1">關聯：{report.billing_request.billing_number}</p>
                         )}
                       </td>
                       <td className="px-4 py-4">
@@ -445,13 +418,9 @@ export default function LaborReportsPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-gray-500">
-                            所得類別：{report.income_type_code}
-                          </span>
+                          <span className="text-xs text-gray-500">所得類別：{report.income_type_code}</span>
                           {report.is_union_member && (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
-                              工會
-                            </span>
+                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">工會</span>
                           )}
                         </div>
                       </td>
@@ -484,11 +453,7 @@ export default function LaborReportsPage() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center justify-center gap-1">
-                          <Link
-                            href={`/dashboard/labor/${report.id}`}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="查看詳情"
-                          >
+                          <Link href={`/dashboard/labor/${report.id}`} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="查看詳情">
                             <Eye className="w-4 h-4 text-gray-600" />
                           </Link>
                           {report.sign_token && (
@@ -505,20 +470,12 @@ export default function LaborReportsPage() {
                             </button>
                           )}
                           {(report.status === 'draft' || report.status === 'pending') && (
-                            <Link
-                              href={`/dashboard/labor/${report.id}/edit`}
-                              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                              title="編輯"
-                            >
+                            <Link href={`/dashboard/labor/${report.id}/edit`} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="編輯">
                               <Edit2 className="w-4 h-4 text-gray-600" />
                             </Link>
                           )}
                           {report.status === 'draft' && (
-                            <button
-                              onClick={() => setDeleteId(report.id)}
-                              className="p-2 hover:bg-red-100 rounded-lg transition-colors"
-                              title="刪除"
-                            >
+                            <button onClick={() => setDeleteId(report.id)} className="p-2 hover:bg-red-100 rounded-lg transition-colors" title="刪除">
                               <Trash2 className="w-4 h-4 text-red-600" />
                             </button>
                           )}
@@ -556,18 +513,8 @@ export default function LaborReportsPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">確認刪除</h3>
             <p className="text-gray-600 mb-6">確定要刪除此勞報單嗎？此操作無法復原。</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteId(null)}
-                className="btn-secondary flex-1"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => handleDelete(deleteId)}
-                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
-              >
-                確認刪除
-              </button>
+              <button onClick={() => setDeleteId(null)} className="btn-secondary flex-1">取消</button>
+              <button onClick={() => handleDelete(deleteId)} className="btn-primary flex-1 bg-red-600 hover:bg-red-700">確認刪除</button>
             </div>
           </div>
         </div>
