@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 // GET - 取得請款單列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const status = searchParams.get('status');
@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
 // POST - 新增請款單
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { 
       company_id,
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
 // PUT - 更新請款單
 export async function PUT(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -161,6 +163,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - 刪除請款單
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
