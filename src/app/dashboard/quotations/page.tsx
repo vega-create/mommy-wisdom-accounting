@@ -112,8 +112,8 @@ export default function QuotationsPage() {
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-2">
                       <Link href={`/dashboard/quotations/${q.id}`} className="text-blue-600 hover:underline text-sm">編輯</Link>
-                      {q.status === "draft" && (
-                        <button onClick={() => handleSendLink(q.id)} className="text-green-600 hover:underline text-sm">發送連結</button>
+                      {q.status === "draft" || q.status === "sent" && (
+                        <button onClick={() => handleSendLink(q.id)} className="text-green-600 hover:underline text-sm">產生連結</button>
                       )}
                       {q.status !== 'converted' && (
                         <button onClick={() => handleConvert(q.id)} className="text-purple-600 hover:underline text-sm">轉合約</button>
