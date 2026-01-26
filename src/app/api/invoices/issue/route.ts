@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       buyer_name,
       buyer_email,
       buyer_tax_id,
-      invoice_type: category,
+      category,
       items,
       carrier_type,
       carrier_num,
@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       Status: '1',
       Category: category || 'B2C',
       BuyerName: buyer_name,
+      BuyerUBN: buyer_tax_id || '',
       BuyerEmail: buyer_email || '',
       PrintFlag: print_flag || 'Y',
       TaxType: '1',
@@ -94,11 +95,6 @@ export async function POST(request: NextRequest) {
       ItemPrice: itemPrices.join('|'),
       ItemAmt: itemAmts.join('|'),
     };
-
-    // B2B 需要統編
-    if (category === 'B2B' && buyer_tax_id) {
-      postData.BuyerUBN = buyer_tax_id;
-    }
 
     // 載具
     if (carrier_type && carrier_num) {
@@ -133,20 +129,28 @@ export async function POST(request: NextRequest) {
       // 解密回傳資料
       const decryptedResult = aesDecrypt(result.Result, hash_key, hash_iv);
       const invoiceResult = JSON.parse(decryptedResult);
-
-      await supabase.from('acct_invoices').insert({
+      
+      // 儲存到資料庫
+      const { error: insertError } = await supabase.from('acct_invoices').insert({
         company_id,
         invoice_number: invoiceResult.InvoiceNumber,
-        invoice_date: invoiceResult.CreateTime,
+        invoice_date: new Date().toISOString().split('T')[0],
         buyer_name,
-        buyer_tax_id,
+        buyer_tax_id: buyer_tax_id || null,
+        buyer_email: buyer_email || null,
         sales_amount: amt,
         tax_amount: taxAmt,
         total_amount: totalAmt,
         status: 'issued',
         ezpay_trans_num: transNum,
-        invoice_type: category,
+        ezpay_invoice_trans_no: invoiceResult.InvoiceTransNo,
+        ezpay_random_num: invoiceResult.RandomNum,
+        invoice_type: category || 'B2C',
       });
+
+      if (insertError) {
+        console.error('Insert error:', insertError);
+      }
 
       return NextResponse.json({
         success: true,
