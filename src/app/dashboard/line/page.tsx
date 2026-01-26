@@ -63,8 +63,8 @@ interface LineSchedule {
   schedule_time?: string;
   schedule_day_of_week?: number;
   schedule_day_of_month?: number;
-  schedule_day_of_month_2?: number;  // 每月2次的第二個日期
-  schedule_month?: number;            // 每年的月份
+  schedule_day_of_month_2?: number;
+  schedule_month?: number;
   status: 'active' | 'paused' | 'completed' | 'cancelled';
   next_run_at?: string;
   last_run_at?: string;
@@ -150,21 +150,43 @@ export default function LinePage() {
     schedule_time: '09:00',
     schedule_day_of_week: 1,
     schedule_day_of_month: 1,
-    schedule_day_of_month_2: 15,  // 每月2次的第二個日期
-    schedule_month: 1             // 每年的月份
+    schedule_day_of_month_2: 15,
+    schedule_month: 1
   });
   const [scheduleVariables, setScheduleVariables] = useState<Record<string, string>>({});
 
-  // ========== 模板管理函數 ==========
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // 載入模板列表
+  // ========== 載入設定 ==========
+  const handleLoadSettings = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/line/settings?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setSettings({
+          id: result.data.id,
+          channel_access_token: result.data.has_token ? '********** (已設定)' : '',
+          channel_secret: result.data.has_secret ? '***** (已設定)' : '',
+          is_active: result.data.is_active || false,
+          webhook_url: result.data.webhook_url || 'https://mommy-wisdom-accounting.vercel.app/api/line/webhook'
+        });
+      }
+    } catch (error) {
+      console.error('Error loading LINE settings:', error);
+    }
+  };
+
+  // ========== 模板管理函數 ==========
   const handleLoadTemplates = async () => {
     if (!company?.id) return;
     setIsLoadingTemplates(true);
     try {
       const response = await fetch(`/api/line/templates?company_id=${company.id}`);
       const result = await response.json();
-      if (result.data) {
+      if (Array.isArray(result)) {
+        setTemplates(result);
+      } else if (result.data) {
         setTemplates(result.data);
       }
     } catch (error) {
@@ -174,18 +196,12 @@ export default function LinePage() {
     }
   };
 
-  // 開啟新增模板 Modal
   const openAddTemplateModal = () => {
     setEditingTemplate(null);
-    setTemplateForm({
-      name: '',
-      category: '',
-      content: ''
-    });
+    setTemplateForm({ name: '', category: '', content: '' });
     setShowTemplateModal(true);
   };
 
-  // 開啟編輯模板 Modal
   const openEditTemplateModal = (template: LineTemplate) => {
     setEditingTemplate(template);
     setTemplateForm({
@@ -196,7 +212,6 @@ export default function LinePage() {
     setShowTemplateModal(true);
   };
 
-  // 儲存模板
   const handleSaveTemplate = async () => {
     if (!company?.id) return;
     if (!templateForm.name || !templateForm.content) {
@@ -218,7 +233,7 @@ export default function LinePage() {
       });
       const result = await response.json();
 
-      if (result.success || result.data) {
+      if (result.success || result.data || result.id) {
         setShowTemplateModal(false);
         handleLoadTemplates();
         alert(editingTemplate ? '模板已更新！' : '模板已新增！');
@@ -233,13 +248,10 @@ export default function LinePage() {
     }
   };
 
-  // 刪除模板
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm('確定要刪除此模板？')) return;
     try {
-      const response = await fetch(`/api/line/templates?id=${id}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(`/api/line/templates?id=${id}`, { method: 'DELETE' });
       const result = await response.json();
       if (result.success) {
         handleLoadTemplates();
@@ -252,100 +264,16 @@ export default function LinePage() {
     }
   };
 
-  // ========== 發送訊息函數 ==========
-
-  // 發送 LINE 訊息
-  const handleSendMessage = async () => {
-    if (!company?.id) return;
-    if (!sendForm.recipientId) {
-      alert('請選擇發送對象');
-      return;
-    }
-
-    let messageContent: string;
-    if (sendForm.useTemplate) {
-      const selectedTemplate = templates.find(t => t.id === sendForm.templateId);
-      if (!selectedTemplate?.content) {
-        alert('請選擇模板');
-        return;
-      }
-      // 替換變數
-      messageContent = replaceTemplateVariables(selectedTemplate.content, templateVariables);
-    } else {
-      messageContent = sendForm.customMessage;
-    }
-
-    if (!messageContent) {
-      alert('請選擇模板或輸入訊息內容');
-      return;
-    }
-
-    setIsSending(true);
-    setSendSuccess(false);
-    try {
-      const response = await fetch('/api/line/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_id: company.id,
-          recipient_type: sendForm.recipientType,
-          recipient_id: sendForm.recipientId,
-          recipient_name: sendForm.recipientName,
-          template_id: sendForm.useTemplate ? sendForm.templateId : null,
-          content: messageContent,  // 傳送已替換變數的內容
-          variables: sendForm.useTemplate ? templateVariables : null
-        })
-      });
-      const result = await response.json();
-
-      if (result.success) {
-        setSendSuccess(true);
-        alert('訊息已發送！');
-        // 重設表單
-        setSendForm({
-          ...sendForm,
-          recipientId: '',
-          recipientName: '',
-          templateId: '',
-          customMessage: ''
-        });
-        setTemplateVariables({});
-      } else {
-        alert(result.error || '發送失敗');
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      alert('發送失敗');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  // 切換到模板 tab 時載入
-  useEffect(() => {
-    if (activeTab === 'templates' && company?.id) {
-      handleLoadTemplates();
-    }
-  }, [activeTab, company?.id]);
-
-  // 切換到發送訊息 tab 時載入群組和模板
-  useEffect(() => {
-    if (activeTab === 'send' && company?.id) {
-      handleLoadGroups();
-      handleLoadTemplates();
-    }
-  }, [activeTab, company?.id]);
-
   // ========== 群組管理函數 ==========
-
-  // 載入群組列表
   const handleLoadGroups = async () => {
     if (!company?.id) return;
     setIsLoadingGroups(true);
     try {
       const response = await fetch(`/api/line/groups?company_id=${company.id}`);
       const result = await response.json();
-      if (result.data) {
+      if (Array.isArray(result)) {
+        setGroups(result);
+      } else if (result.data) {
         setGroups(result.data);
       }
     } catch (error) {
@@ -355,19 +283,12 @@ export default function LinePage() {
     }
   };
 
-  // 開啟新增群組 Modal
   const openAddGroupModal = () => {
     setEditingGroup(null);
-    setGroupForm({
-      group_name: '',
-      group_id: '',
-      group_type: 'group',
-      description: ''
-    });
+    setGroupForm({ group_name: '', group_id: '', group_type: 'group', description: '' });
     setShowGroupModal(true);
   };
 
-  // 開啟編輯群組 Modal
   const openEditGroupModal = (group: LineGroup) => {
     setEditingGroup(group);
     setGroupForm({
@@ -379,7 +300,6 @@ export default function LinePage() {
     setShowGroupModal(true);
   };
 
-  // 儲存群組（新增或更新）
   const handleSaveGroup = async () => {
     if (!company?.id) return;
     if (!groupForm.group_name || !groupForm.group_id) {
@@ -401,9 +321,9 @@ export default function LinePage() {
       });
       const result = await response.json();
 
-      if (result.success || result.data) {
+      if (result.success || result.data || result.id) {
         setShowGroupModal(false);
-        handleLoadGroups(); // 重新載入
+        handleLoadGroups();
         alert(editingGroup ? '群組已更新！' : '群組已新增！');
       } else {
         alert(result.error || '儲存失敗');
@@ -416,13 +336,10 @@ export default function LinePage() {
     }
   };
 
-  // 刪除群組
   const handleDeleteGroup = async (id: string) => {
     if (!confirm('確定要刪除此群組？')) return;
     try {
-      const response = await fetch(`/api/line/groups?id=${id}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(`/api/line/groups?id=${id}`, { method: 'DELETE' });
       const result = await response.json();
       if (result.success) {
         handleLoadGroups();
@@ -435,23 +352,16 @@ export default function LinePage() {
     }
   };
 
-  // 切換到群組 tab 時載入
-  useEffect(() => {
-    if (activeTab === 'groups' && company?.id) {
-      handleLoadGroups();
-    }
-  }, [activeTab, company?.id]);
-
   // ========== 排程管理函數 ==========
-
-  // 載入排程列表
   const handleLoadSchedules = async () => {
     if (!company?.id) return;
     setIsLoadingSchedules(true);
     try {
       const response = await fetch(`/api/line/schedules?company_id=${company.id}`);
       const result = await response.json();
-      if (result.data) {
+      if (Array.isArray(result)) {
+        setSchedules(result);
+      } else if (result.data) {
         setSchedules(result.data);
       }
     } catch (error) {
@@ -461,7 +371,6 @@ export default function LinePage() {
     }
   };
 
-  // 開啟新增排程 Modal
   const openAddScheduleModal = () => {
     setEditingSchedule(null);
     setScheduleForm({
@@ -484,7 +393,6 @@ export default function LinePage() {
     setShowScheduleModal(true);
   };
 
-  // 開啟編輯排程 Modal
   const openEditScheduleModal = (schedule: LineSchedule) => {
     setEditingSchedule(schedule);
     setScheduleForm({
@@ -503,13 +411,9 @@ export default function LinePage() {
       schedule_day_of_month_2: schedule.schedule_day_of_month_2 || 15,
       schedule_month: schedule.schedule_month || 1
     });
-    // 載入已儲存的變數（如果有的話）
-    // @ts-ignore - schedule 可能有 variables 欄位
-    setScheduleVariables(schedule.variables || {});
     setShowScheduleModal(true);
   };
 
-  // 儲存排程
   const handleSaveSchedule = async () => {
     if (!company?.id) return;
     if (!scheduleForm.name || !scheduleForm.recipient_id) {
@@ -525,47 +429,28 @@ export default function LinePage() {
       const url = '/api/line/schedules';
       const method = editingSchedule ? 'PUT' : 'POST';
 
-      // 根據排程類型決定要傳送的欄位
       const needsDayOfWeek = ['weekly', 'biweekly'].includes(scheduleForm.schedule_type);
       const needsDayOfMonth = ['monthly', 'twice_monthly', 'yearly'].includes(scheduleForm.schedule_type);
       const needsDayOfMonth2 = scheduleForm.schedule_type === 'twice_monthly';
       const needsMonth = scheduleForm.schedule_type === 'yearly';
 
-      const body = editingSchedule
-        ? {
-          id: editingSchedule.id,
-          name: scheduleForm.name,
-          recipient_type: scheduleForm.recipient_type,
-          recipient_id: scheduleForm.recipient_id,
-          recipient_name: scheduleForm.recipient_name,
-          template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
-          custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
-          variables: scheduleForm.use_template ? scheduleVariables : {},
-          schedule_type: scheduleForm.schedule_type,
-          scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
-          schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
-          schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
-          schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
-          schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
-          schedule_month: needsMonth ? scheduleForm.schedule_month : null
-        }
-        : {
-          company_id: company.id,
-          name: scheduleForm.name,
-          recipient_type: scheduleForm.recipient_type,
-          recipient_id: scheduleForm.recipient_id,
-          recipient_name: scheduleForm.recipient_name,
-          template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
-          custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
-          variables: scheduleForm.use_template ? scheduleVariables : {},
-          schedule_type: scheduleForm.schedule_type,
-          scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
-          schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
-          schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
-          schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
-          schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
-          schedule_month: needsMonth ? scheduleForm.schedule_month : null
-        };
+      const body = {
+        ...(editingSchedule ? { id: editingSchedule.id } : { company_id: company.id }),
+        name: scheduleForm.name,
+        recipient_type: scheduleForm.recipient_type,
+        recipient_id: scheduleForm.recipient_id,
+        recipient_name: scheduleForm.recipient_name,
+        template_id: scheduleForm.use_template ? scheduleForm.template_id : null,
+        custom_content: scheduleForm.use_template ? null : scheduleForm.custom_content,
+        variables: scheduleForm.use_template ? scheduleVariables : {},
+        schedule_type: scheduleForm.schedule_type,
+        scheduled_at: scheduleForm.schedule_type === 'once' ? scheduleForm.scheduled_at : null,
+        schedule_time: scheduleForm.schedule_type !== 'once' ? scheduleForm.schedule_time : null,
+        schedule_day_of_week: needsDayOfWeek ? scheduleForm.schedule_day_of_week : null,
+        schedule_day_of_month: needsDayOfMonth ? scheduleForm.schedule_day_of_month : null,
+        schedule_day_of_month_2: needsDayOfMonth2 ? scheduleForm.schedule_day_of_month_2 : null,
+        schedule_month: needsMonth ? scheduleForm.schedule_month : null
+      };
 
       const response = await fetch(url, {
         method,
@@ -574,7 +459,7 @@ export default function LinePage() {
       });
       const result = await response.json();
 
-      if (result.success || result.data) {
+      if (result.success || result.data || result.id) {
         setShowScheduleModal(false);
         handleLoadSchedules();
         setScheduleVariables({});
@@ -590,7 +475,6 @@ export default function LinePage() {
     }
   };
 
-  // 暫停/啟用排程
   const handleToggleSchedule = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
     try {
@@ -611,13 +495,10 @@ export default function LinePage() {
     }
   };
 
-  // 刪除排程
   const handleDeleteSchedule = async (id: string) => {
     if (!confirm('確定要刪除此排程？')) return;
     try {
-      const response = await fetch(`/api/line/schedules?id=${id}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(`/api/line/schedules?id=${id}`, { method: 'DELETE' });
       const result = await response.json();
       if (result.success) {
         handleLoadSchedules();
@@ -630,67 +511,114 @@ export default function LinePage() {
     }
   };
 
-  // 切換到排程 tab 時載入
-  useEffect(() => {
-    if (activeTab === 'schedules' && company?.id) {
-      handleLoadSchedules();
-      handleLoadGroups();
-      handleLoadTemplates();
+  // ========== 發送訊息函數 ==========
+  const handleSendMessage = async () => {
+    if (!company?.id) return;
+    if (!sendForm.recipientId) {
+      alert('請選擇發送對象');
+      return;
     }
-  }, [activeTab, company?.id]);
 
-  // 切換到發送記錄 tab 時自動載入
-  useEffect(() => {
-    if (activeTab === 'history' && company?.id) {
-      handleLoadMessages();
+    let messageContent: string;
+    if (sendForm.useTemplate) {
+      const selectedTemplate = templates.find(t => t.id === sendForm.templateId);
+      if (!selectedTemplate?.content) {
+        alert('請選擇模板');
+        return;
+      }
+      messageContent = replaceTemplateVariables(selectedTemplate.content, templateVariables);
+    } else {
+      messageContent = sendForm.customMessage;
     }
-  }, [activeTab, company?.id]);
 
-  // 載入 LINE 設定
-  useEffect(() => {
-    if (company?.id) {
-      handleLoadSettings();
+    if (!messageContent) {
+      alert('請選擇模板或輸入訊息內容');
+      return;
     }
-  }, [company?.id]);
 
-  // Helper: 取得變數的占位符提示
-  const getVariablePlaceholder = (varName: string): string => {
-    const placeholders: Record<string, string> = {
-      customer_name: '例：王小明',
-      name: '例：王小明',
-      month: '例：1',
-      amount: '例：10000',
-      due_date: '例：2026/02/15',
-      invoice_number: '例：AB12345678',
-      sign_url: '簽署連結',
-      deadline: '例：2026/02/10',
-      date: '例：2026/01/24',
-      bank_account: '例：012-123456789',
-      title: '標題',
-      content: '內容'
-    };
-    return placeholders[varName] || `輸入 ${varName}`;
+    setIsSending(true);
+    setSendSuccess(false);
+    try {
+      const response = await fetch('/api/line/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: company.id,
+          recipient_type: sendForm.recipientType,
+          recipient_id: sendForm.recipientId,
+          recipient_name: sendForm.recipientName,
+          template_id: sendForm.useTemplate ? sendForm.templateId : null,
+          content: messageContent,
+          variables: sendForm.useTemplate ? templateVariables : null
+        })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setSendSuccess(true);
+        alert('訊息已發送！');
+        setSendForm({
+          ...sendForm,
+          recipientId: '',
+          recipientName: '',
+          templateId: '',
+          customMessage: ''
+        });
+        setTemplateVariables({});
+      } else {
+        alert(result.error || '發送失敗');
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('發送失敗');
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  // Helper: 替換模板變數
-  const replaceTemplateVariables = (content: string, variables: Record<string, string>): string => {
-    let result = content;
-    for (const [key, value] of Object.entries(variables)) {
-      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value || `{{${key}}}`);
+  // ========== 發送記錄 ==========
+  const handleLoadMessages = async () => {
+    if (!company?.id) return;
+    setIsLoadingMessages(true);
+    try {
+      const response = await fetch(`/api/line/send?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setMessages(result.data.map((m: any) => ({
+          id: m.id,
+          recipient_name: m.recipient_name || m.group_name || '未知',
+          recipient_type: m.recipient_type || 'user',
+          content: m.content || m.message_content || '',
+          status: m.status || 'sent',
+          sent_at: m.sent_at ? new Date(m.sent_at).toLocaleString('zh-TW') : null,
+          created_at: m.created_at ? new Date(m.created_at).toLocaleString('zh-TW') : '',
+          error_message: m.error_message
+        })));
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    } finally {
+      setIsLoadingMessages(false);
     }
-    return result;
   };
 
-  // Tab content components
-  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
-    { id: 'settings', label: 'API 設定', icon: <Settings className="w-4 h-4" /> },
-    { id: 'groups', label: '群組管理', icon: <Users className="w-4 h-4" /> },
-    { id: 'templates', label: '模板管理', icon: <FileText className="w-4 h-4" /> },
-    { id: 'send', label: '發送訊息', icon: <Send className="w-4 h-4" /> },
-    { id: 'schedules', label: '排程發送', icon: <Calendar className="w-4 h-4" /> },
-    { id: 'history', label: '發送記錄', icon: <Clock className="w-4 h-4" /> },
-  ];
+  const handleDeleteMessage = async (id: string) => {
+    try {
+      const response = await fetch(`/api/line/send?id=${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        setMessages(messages.filter(m => m.id !== id));
+      } else {
+        alert(result.error || '刪除失敗');
+      }
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      alert('刪除失敗');
+    }
+    setDeletingMessageId(null);
+  };
 
+  // ========== 設定相關 ==========
   const handleTestConnection = async () => {
     if (!company?.id) return;
     setIsTestingConnection(true);
@@ -720,29 +648,6 @@ export default function LinePage() {
     }
   };
 
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-
-  // 載入 LINE 設定
-  const handleLoadSettings = async () => {
-    if (!company?.id) return;
-    try {
-      const response = await fetch(`/api/line/settings?company_id=${company.id}`);
-      const result = await response.json();
-      if (result.data) {
-        setSettings({
-          id: result.data.id,
-          channel_access_token: result.data.has_token ? '********** (已設定)' : '',
-          channel_secret: result.data.has_secret ? '***** (已設定)' : '',
-          is_active: result.data.is_active || false,
-          webhook_url: result.data.webhook_url || `https://mommy-wisdom-accounting.vercel.app/api/line/webhook`
-        });
-      }
-    } catch (error) {
-      console.error('Error loading LINE settings:', error);
-    }
-  };
-
-  // 儲存 LINE 設定
   const handleSaveSettings = async () => {
     if (!company?.id) return;
     setIsSavingSettings(true);
@@ -755,7 +660,7 @@ export default function LinePage() {
           channel_access_token: settings.channel_access_token,
           channel_secret: settings.channel_secret,
           is_active: settings.is_active,
-          webhook_url: `https://mommy-wisdom-accounting.vercel.app/api/line/webhook`
+          webhook_url: 'https://mommy-wisdom-accounting.vercel.app/api/line/webhook'
         })
       });
       const result = await response.json();
@@ -772,49 +677,71 @@ export default function LinePage() {
     }
   };
 
-  // 載入發送記錄
-  const handleLoadMessages = async () => {
-    if (!company?.id) return;
-    setIsLoadingMessages(true);
-    try {
-      const response = await fetch(`/api/line/send?company_id=${company.id}`);
-      const result = await response.json();
-      if (result.data) {
-        setMessages(result.data.map((m: any) => ({
-          id: m.id,
-          recipient_name: m.recipient_name || m.group_name || '未知',
-          recipient_type: m.recipient_type || 'user',
-          content: m.content || m.message_content || '',
-          status: m.status || 'sent',
-          sent_at: m.sent_at ? new Date(m.sent_at).toLocaleString('zh-TW') : null,
-          created_at: m.created_at ? new Date(m.created_at).toLocaleString('zh-TW') : '',
-          error_message: m.error_message
-        })));
-      }
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    } finally {
-      setIsLoadingMessages(false);
+  // ========== Effects ==========
+  useEffect(() => {
+    if (company?.id) {
+      handleLoadSettings();
     }
+  }, [company?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'templates' && company?.id) {
+      handleLoadTemplates();
+    }
+  }, [activeTab, company?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'send' && company?.id) {
+      handleLoadGroups();
+      handleLoadTemplates();
+    }
+  }, [activeTab, company?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'groups' && company?.id) {
+      handleLoadGroups();
+    }
+  }, [activeTab, company?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'schedules' && company?.id) {
+      handleLoadSchedules();
+      handleLoadGroups();
+      handleLoadTemplates();
+    }
+  }, [activeTab, company?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'history' && company?.id) {
+      handleLoadMessages();
+    }
+  }, [activeTab, company?.id]);
+
+  // ========== Helpers ==========
+  const getVariablePlaceholder = (varName: string): string => {
+    const placeholders: Record<string, string> = {
+      customer_name: '例：王小明',
+      name: '例：王小明',
+      month: '例：1',
+      amount: '例：10000',
+      due_date: '例：2026/02/15',
+      invoice_number: '例：AB12345678',
+      sign_url: '簽署連結',
+      deadline: '例：2026/02/10',
+      date: '例：2026/01/24',
+      bank_account: '例：012-123456789',
+      title: '標題',
+      content: '內容'
+    };
+    return placeholders[varName] || `輸入 ${varName}`;
   };
 
-  // 刪除發送記錄
-  const handleDeleteMessage = async (id: string) => {
-    try {
-      const response = await fetch(`/api/line/send?id=${id}`, {
-        method: 'DELETE'
-      });
-      const result = await response.json();
-      if (result.success) {
-        setMessages(messages.filter(m => m.id !== id));
-      } else {
-        alert(result.error || '刪除失敗');
-      }
-    } catch (error) {
-      console.error('Error deleting message:', error);
-      alert('刪除失敗');
+  const replaceTemplateVariables = (content: string, variables: Record<string, string>): string => {
+    let result = content;
+    for (const [key, value] of Object.entries(variables)) {
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value || `{{${key}}}`);
     }
-    setDeletingMessageId(null);
+    return result;
   };
 
   const getStatusBadge = (status: string) => {
@@ -831,6 +758,15 @@ export default function LinePage() {
         return null;
     }
   };
+
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: 'settings', label: 'API 設定', icon: <Settings className="w-4 h-4" /> },
+    { id: 'groups', label: '群組管理', icon: <Users className="w-4 h-4" /> },
+    { id: 'templates', label: '模板管理', icon: <FileText className="w-4 h-4" /> },
+    { id: 'send', label: '發送訊息', icon: <Send className="w-4 h-4" /> },
+    { id: 'schedules', label: '排程發送', icon: <Calendar className="w-4 h-4" /> },
+    { id: 'history', label: '發送記錄', icon: <Clock className="w-4 h-4" /> },
+  ];
 
   return (
     <div className="space-y-6">
@@ -853,8 +789,8 @@ export default function LinePage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
-                  ? 'border-brand-primary-600 text-brand-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-brand-primary-600 text-brand-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               {tab.icon}
@@ -875,22 +811,16 @@ export default function LinePage() {
                 <span className="text-sm text-gray-500">啟用狀態</span>
                 <button
                   onClick={() => setSettings({ ...settings, is_active: !settings.is_active })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'
-                    }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'}`}
                 >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.is_active ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                  />
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.is_active ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>
 
             <div className="grid gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Channel Access Token
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Channel Access Token</label>
                 <input
                   type="password"
                   value={settings.channel_access_token}
@@ -898,15 +828,11 @@ export default function LinePage() {
                   placeholder="輸入 Channel Access Token"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-brand-primary-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  從 LINE Developers Console 取得
-                </p>
+                <p className="text-xs text-gray-500 mt-1">從 LINE Developers Console 取得</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Channel Secret
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Channel Secret</label>
                 <input
                   type="password"
                   value={settings.channel_secret}
@@ -917,9 +843,7 @@ export default function LinePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Webhook URL
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -937,9 +861,7 @@ export default function LinePage() {
                     複製
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  將此 URL 設定到 LINE Developers Console 的 Webhook URL
-                </p>
+                <p className="text-xs text-gray-500 mt-1">將此 URL 設定到 LINE Developers Console 的 Webhook URL</p>
               </div>
             </div>
 
@@ -949,11 +871,7 @@ export default function LinePage() {
                 disabled={isTestingConnection}
                 className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50"
               >
-                {isTestingConnection ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
+                <RefreshCw className={`w-4 h-4 ${isTestingConnection ? 'animate-spin' : ''}`} />
                 測試連線
               </button>
 
@@ -1010,7 +928,7 @@ export default function LinePage() {
                 <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-brand-primary-500" />
                 <p className="text-gray-500">載入中...</p>
               </div>
-            ) : (
+            ) : groups.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -1039,18 +957,10 @@ export default function LinePage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => openEditGroupModal(group)}
-                              className="p-1 text-gray-500 hover:text-brand-primary-600"
-                              title="編輯"
-                            >
+                            <button onClick={() => openEditGroupModal(group)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="編輯">
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteGroup(group.id)}
-                              className="p-1 text-gray-500 hover:text-red-600"
-                              title="刪除"
-                            >
+                            <button onClick={() => handleDeleteGroup(group.id)} className="p-1 text-gray-500 hover:text-red-600" title="刪除">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -1060,9 +970,7 @@ export default function LinePage() {
                   </tbody>
                 </table>
               </div>
-            )}
-
-            {!isLoadingGroups && groups.length === 0 && (
+            ) : (
               <div className="text-center py-12 text-gray-500">
                 <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>尚未新增任何群組</p>
@@ -1100,30 +1008,24 @@ export default function LinePage() {
                 <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-brand-primary-500" />
                 <p className="text-gray-500">載入中...</p>
               </div>
-            ) : (
+            ) : templates.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {templates.map((template) => (
                   <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h3 className="font-medium">{template.name}</h3>
-                        {template.category && (
-                          <span className="text-xs text-gray-500">{template.category}</span>
-                        )}
+                        {template.category && <span className="text-xs text-gray-500">{template.category}</span>}
                       </div>
                       <span className="text-xs text-gray-400">使用 {template.usage_count || 0} 次</span>
                     </div>
 
-                    <p className="text-sm text-gray-600 line-clamp-3 mb-3 whitespace-pre-line">
-                      {template.content}
-                    </p>
+                    <p className="text-sm text-gray-600 line-clamp-3 mb-3 whitespace-pre-line">{template.content}</p>
 
                     {template.variables && template.variables.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-3">
                         {template.variables.map((v) => (
-                          <span key={v} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                            {`{{${v}}}`}
-                          </span>
+                          <span key={v} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{`{{${v}}}`}</span>
                         ))}
                       </div>
                     )}
@@ -1133,25 +1035,13 @@ export default function LinePage() {
                         {template.is_active ? '● 啟用中' : '○ 已停用'}
                       </span>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setPreviewTemplate(template)}
-                          className="p-1 text-gray-500 hover:text-brand-primary-600"
-                          title="預覽"
-                        >
+                        <button onClick={() => setPreviewTemplate(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="預覽">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => openEditTemplateModal(template)}
-                          className="p-1 text-gray-500 hover:text-brand-primary-600"
-                          title="編輯"
-                        >
+                        <button onClick={() => openEditTemplateModal(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="編輯">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteTemplate(template.id)}
-                          className="p-1 text-gray-500 hover:text-red-600"
-                          title="刪除"
-                        >
+                        <button onClick={() => handleDeleteTemplate(template.id)} className="p-1 text-gray-500 hover:text-red-600" title="刪除">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -1159,9 +1049,7 @@ export default function LinePage() {
                   </div>
                 ))}
               </div>
-            )}
-
-            {!isLoadingTemplates && templates.length === 0 && (
+            ) : (
               <div className="text-center py-12 text-gray-500">
                 <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>尚未建立任何模板</p>
@@ -1177,9 +1065,7 @@ export default function LinePage() {
             <h2 className="text-lg font-semibold">發送 LINE 訊息</h2>
 
             <div className="grid gap-6 md:grid-cols-2">
-              {/* Left: Form */}
               <div className="space-y-4">
-                {/* Recipient Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">發送對象</label>
                   <div className="flex gap-4">
@@ -1189,7 +1075,7 @@ export default function LinePage() {
                         name="recipientType"
                         value="group"
                         checked={sendForm.recipientType === 'group'}
-                        onChange={(e) => setSendForm({ ...sendForm, recipientType: 'group', recipientId: '' })}
+                        onChange={() => setSendForm({ ...sendForm, recipientType: 'group', recipientId: '' })}
                         className="text-brand-primary-600"
                       />
                       <span>群組</span>
@@ -1200,7 +1086,7 @@ export default function LinePage() {
                         name="recipientType"
                         value="user"
                         checked={sendForm.recipientType === 'user'}
-                        onChange={(e) => setSendForm({ ...sendForm, recipientType: 'user', recipientId: '' })}
+                        onChange={() => setSendForm({ ...sendForm, recipientType: 'user', recipientId: '' })}
                         className="text-brand-primary-600"
                       />
                       <span>個人</span>
@@ -1208,7 +1094,6 @@ export default function LinePage() {
                   </div>
                 </div>
 
-                {/* Recipient Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {sendForm.recipientType === 'group' ? '選擇群組' : '輸入 LINE User ID'}
@@ -1224,7 +1109,7 @@ export default function LinePage() {
                           recipientName: selectedGroup?.group_name || ''
                         });
                       }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-brand-primary-500"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     >
                       <option value="">請選擇群組...</option>
                       {groups.filter(g => g.is_active).map((g) => (
@@ -1237,22 +1122,17 @@ export default function LinePage() {
                       value={sendForm.recipientId}
                       onChange={(e) => setSendForm({ ...sendForm, recipientId: e.target.value })}
                       placeholder="輸入 LINE User ID (U...)"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-brand-primary-500 font-mono"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 font-mono"
                     />
-                  )}
-                  {sendForm.recipientType === 'user' && (
-                    <p className="text-xs text-gray-500 mt-1">可從客戶管理頁面查看客戶的 LINE ID</p>
                   )}
                 </div>
 
-                {/* Message Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">訊息內容</label>
                   <div className="flex gap-4 mb-3">
                     <label className="flex items-center gap-2">
                       <input
                         type="radio"
-                        name="messageType"
                         checked={sendForm.useTemplate}
                         onChange={() => setSendForm({ ...sendForm, useTemplate: true })}
                         className="text-brand-primary-600"
@@ -1262,7 +1142,6 @@ export default function LinePage() {
                     <label className="flex items-center gap-2">
                       <input
                         type="radio"
-                        name="messageType"
                         checked={!sendForm.useTemplate}
                         onChange={() => setSendForm({ ...sendForm, useTemplate: false })}
                         className="text-brand-primary-600"
@@ -1277,7 +1156,6 @@ export default function LinePage() {
                         value={sendForm.templateId}
                         onChange={(e) => {
                           setSendForm({ ...sendForm, templateId: e.target.value });
-                          // 重置變數值
                           const selectedTemplate = templates.find(t => t.id === e.target.value);
                           if (selectedTemplate?.variables) {
                             const vars: Record<string, string> = {};
@@ -1287,7 +1165,7 @@ export default function LinePage() {
                             setTemplateVariables({});
                           }
                         }}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-brand-primary-500"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                       >
                         <option value="">選擇模板...</option>
                         {templates.filter(t => t.is_active).map((t) => (
@@ -1295,7 +1173,6 @@ export default function LinePage() {
                         ))}
                       </select>
 
-                      {/* 變數輸入區 */}
                       {sendForm.templateId && (() => {
                         const selectedTemplate = templates.find(t => t.id === sendForm.templateId);
                         if (!selectedTemplate?.variables?.length) return null;
@@ -1308,10 +1185,7 @@ export default function LinePage() {
                                 <input
                                   type="text"
                                   value={templateVariables[varName] || ''}
-                                  onChange={(e) => setTemplateVariables({
-                                    ...templateVariables,
-                                    [varName]: e.target.value
-                                  })}
+                                  onChange={(e) => setTemplateVariables({ ...templateVariables, [varName]: e.target.value })}
                                   placeholder={getVariablePlaceholder(varName)}
                                   className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                                 />
@@ -1327,7 +1201,7 @@ export default function LinePage() {
                       onChange={(e) => setSendForm({ ...sendForm, customMessage: e.target.value })}
                       placeholder="輸入訊息內容..."
                       rows={6}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-brand-primary-500"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
                   )}
                 </div>
@@ -1338,18 +1212,13 @@ export default function LinePage() {
                   className="w-full py-3 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isSending ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" /> 發送中...
-                    </>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> 發送中...</>
                   ) : (
-                    <>
-                      <Send className="w-4 h-4" /> 發送訊息
-                    </>
+                    <><Send className="w-4 h-4" /> 發送訊息</>
                   )}
                 </button>
               </div>
 
-              {/* Right: Preview */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">訊息預覽</label>
                 <div className="bg-[#7B8D93] rounded-2xl p-4 min-h-[300px]">
@@ -1401,7 +1270,7 @@ export default function LinePage() {
                 <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-brand-primary-500" />
                 <p className="text-gray-500">載入中...</p>
               </div>
-            ) : (
+            ) : schedules.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -1419,59 +1288,34 @@ export default function LinePage() {
                     {schedules.map((schedule) => (
                       <tr key={schedule.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium">{schedule.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {schedule.recipient_name || schedule.recipient_id}
-                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{schedule.recipient_name || schedule.recipient_id}</td>
                         <td className="px-4 py-3 text-sm">
-                          {schedule.schedule_type === 'once' && (
-                            <span className="text-blue-600">單次</span>
-                          )}
-                          {schedule.schedule_type === 'daily' && (
-                            <span className="text-green-600">每日 {schedule.schedule_time}</span>
-                          )}
+                          {schedule.schedule_type === 'once' && <span className="text-blue-600">單次</span>}
+                          {schedule.schedule_type === 'daily' && <span className="text-green-600">每日 {schedule.schedule_time}</span>}
                           {schedule.schedule_type === 'weekly' && (
-                            <span className="text-purple-600">
-                              每週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
-                            </span>
+                            <span className="text-purple-600">每週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}</span>
                           )}
                           {schedule.schedule_type === 'biweekly' && (
-                            <span className="text-indigo-600">
-                              每兩週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}
-                            </span>
+                            <span className="text-indigo-600">每兩週{['日', '一', '二', '三', '四', '五', '六'][schedule.schedule_day_of_week || 0]} {schedule.schedule_time}</span>
                           )}
                           {schedule.schedule_type === 'monthly' && (
-                            <span className="text-orange-600">
-                              每月 {schedule.schedule_day_of_month} 日 {schedule.schedule_time}
-                            </span>
+                            <span className="text-orange-600">每月 {schedule.schedule_day_of_month} 日 {schedule.schedule_time}</span>
                           )}
                           {schedule.schedule_type === 'twice_monthly' && (
-                            <span className="text-pink-600">
-                              每月 {schedule.schedule_day_of_month}、{schedule.schedule_day_of_month_2} 日 {schedule.schedule_time}
-                            </span>
+                            <span className="text-pink-600">每月 {schedule.schedule_day_of_month}、{schedule.schedule_day_of_month_2} 日 {schedule.schedule_time}</span>
                           )}
                           {schedule.schedule_type === 'yearly' && (
-                            <span className="text-red-600">
-                              每年 {schedule.schedule_month}/{schedule.schedule_day_of_month} {schedule.schedule_time}
-                            </span>
+                            <span className="text-red-600">每年 {schedule.schedule_month}/{schedule.schedule_day_of_month} {schedule.schedule_time}</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
-                          {schedule.next_run_at
-                            ? new Date(schedule.next_run_at).toLocaleString('zh-TW')
-                            : '-'
-                          }
+                          {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString('zh-TW') : '-'}
                         </td>
                         <td className="px-4 py-3 text-center text-sm">{schedule.run_count || 0}</td>
                         <td className="px-4 py-3 text-center">
-                          {schedule.status === 'active' && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">啟用中</span>
-                          )}
-                          {schedule.status === 'paused' && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">已暫停</span>
-                          )}
-                          {schedule.status === 'completed' && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">已完成</span>
-                          )}
+                          {schedule.status === 'active' && <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">啟用中</span>}
+                          {schedule.status === 'paused' && <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">已暫停</span>}
+                          {schedule.status === 'completed' && <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">已完成</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
@@ -1484,18 +1328,10 @@ export default function LinePage() {
                                 {schedule.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                               </button>
                             )}
-                            <button
-                              onClick={() => openEditScheduleModal(schedule)}
-                              className="p-1 text-gray-500 hover:text-brand-primary-600"
-                              title="編輯"
-                            >
+                            <button onClick={() => openEditScheduleModal(schedule)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="編輯">
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteSchedule(schedule.id)}
-                              className="p-1 text-gray-500 hover:text-red-600"
-                              title="刪除"
-                            >
+                            <button onClick={() => handleDeleteSchedule(schedule.id)} className="p-1 text-gray-500 hover:text-red-600" title="刪除">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -1505,9 +1341,7 @@ export default function LinePage() {
                   </tbody>
                 </table>
               </div>
-            )}
-
-            {!isLoadingSchedules && schedules.length === 0 && (
+            ) : (
               <div className="text-center py-12 text-gray-500">
                 <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>尚未建立任何排程</p>
@@ -1531,75 +1365,57 @@ export default function LinePage() {
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">時間</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">對象</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">類型</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">內容</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">狀態</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {messages.map((msg) => (
-                    <tr key={msg.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-600">{msg.sent_at || msg.created_at}</td>
-                      <td className="px-4 py-3 font-medium">{msg.recipient_name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {msg.recipient_type === 'group' ? '群組' : '個人'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">{msg.content}</td>
-                      <td className="px-4 py-3 text-center">
-                        {getStatusBadge(msg.status)}
-                        {msg.error_message && (
-                          <p className="text-xs text-red-500 mt-1">{msg.error_message}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {deletingMessageId === msg.id ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              className="p-1.5 bg-red-500 text-white rounded hover:bg-red-600"
-                              title="確認刪除"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setDeletingMessageId(null)}
-                              className="p-1.5 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                              title="取消"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setDeletingMessageId(msg.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="刪除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {isLoadingMessages && (
+            {isLoadingMessages ? (
               <div className="text-center py-8">
                 <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-brand-primary-500" />
                 <p className="text-gray-500">載入中...</p>
               </div>
-            )}
-
-            {!isLoadingMessages && messages.length === 0 && (
+            ) : messages.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">時間</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">對象</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">類型</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">內容</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">狀態</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {messages.map((msg) => (
+                      <tr key={msg.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-600">{msg.sent_at || msg.created_at}</td>
+                        <td className="px-4 py-3 font-medium">{msg.recipient_name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{msg.recipient_type === 'group' ? '群組' : '個人'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">{msg.content}</td>
+                        <td className="px-4 py-3 text-center">
+                          {getStatusBadge(msg.status)}
+                          {msg.error_message && <p className="text-xs text-red-500 mt-1">{msg.error_message}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {deletingMessageId === msg.id ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 bg-red-500 text-white rounded hover:bg-red-600" title="確認刪除">
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setDeletingMessageId(null)} className="p-1.5 bg-gray-300 text-gray-700 rounded hover:bg-gray-400" title="取消">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setDeletingMessageId(msg.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="刪除">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
               <div className="text-center py-12 text-gray-500">
                 <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>尚無發送記錄</p>
@@ -1613,9 +1429,7 @@ export default function LinePage() {
       {showGroupModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingGroup ? '編輯群組' : '新增群組'}
-            </h3>
+            <h3 className="text-lg font-semibold mb-4">{editingGroup ? '編輯群組' : '新增群組'}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">群組名稱 *</label>
@@ -1662,18 +1476,8 @@ export default function LinePage() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowGroupModal(false)}
-                disabled={isSavingGroup}
-                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveGroup}
-                disabled={isSavingGroup}
-                className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
+              <button onClick={() => setShowGroupModal(false)} disabled={isSavingGroup} className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
+              <button onClick={handleSaveGroup} disabled={isSavingGroup} className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSavingGroup && <RefreshCw className="w-4 h-4 animate-spin" />}
                 {isSavingGroup ? '儲存中...' : '儲存'}
               </button>
@@ -1686,9 +1490,7 @@ export default function LinePage() {
       {showTemplateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-lg">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingTemplate ? '編輯模板' : '新增模板'}
-            </h3>
+            <h3 className="text-lg font-semibold mb-4">{editingTemplate ? '編輯模板' : '新增模板'}</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1721,24 +1523,12 @@ export default function LinePage() {
                   rows={8}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 font-mono text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  可用變數：{`{{customer_name}}`}, {`{{amount}}`}, {`{{due_date}}`}, {`{{invoice_number}}`} 等
-                </p>
+                <p className="text-xs text-gray-500 mt-1">可用變數：{`{{customer_name}}`}, {`{{amount}}`}, {`{{due_date}}`}, {`{{invoice_number}}`} 等</p>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowTemplateModal(false)}
-                disabled={isSavingTemplate}
-                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveTemplate}
-                disabled={isSavingTemplate}
-                className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
+              <button onClick={() => setShowTemplateModal(false)} disabled={isSavingTemplate} className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
+              <button onClick={handleSaveTemplate} disabled={isSavingTemplate} className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSavingTemplate && <RefreshCw className="w-4 h-4 animate-spin" />}
                 {isSavingTemplate ? '儲存中...' : '儲存'}
               </button>
@@ -1753,23 +1543,17 @@ export default function LinePage() {
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">{previewTemplate.name}</h3>
-              <button onClick={() => setPreviewTemplate(null)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setPreviewTemplate(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="bg-[#7B8D93] rounded-2xl p-4">
-              <div className="bg-[#8DE055] rounded-2xl rounded-tr-sm p-3 max-w-[90%] ml-auto text-sm whitespace-pre-line">
-                {previewTemplate.content}
-              </div>
+              <div className="bg-[#8DE055] rounded-2xl rounded-tr-sm p-3 max-w-[90%] ml-auto text-sm whitespace-pre-line">{previewTemplate.content}</div>
             </div>
             {previewTemplate.variables && previewTemplate.variables.length > 0 && (
               <div className="mt-4">
                 <p className="text-sm text-gray-500 mb-2">可用變數：</p>
                 <div className="flex flex-wrap gap-2">
                   {previewTemplate.variables.map((v) => (
-                    <span key={v} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded font-mono">
-                      {`{{${v}}}`}
-                    </span>
+                    <span key={v} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded font-mono">{`{{${v}}}`}</span>
                   ))}
                 </div>
               </div>
@@ -1782,11 +1566,8 @@ export default function LinePage() {
       {showScheduleModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingSchedule ? '編輯排程' : '新增排程'}
-            </h3>
+            <h3 className="text-lg font-semibold mb-4">{editingSchedule ? '編輯排程' : '新增排程'}</h3>
             <div className="space-y-4">
-              {/* 排程名稱 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">排程名稱 *</label>
                 <input
@@ -1798,26 +1579,15 @@ export default function LinePage() {
                 />
               </div>
 
-              {/* 發送對象 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">發送對象 *</label>
                 <div className="flex gap-4 mb-2">
                   <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={scheduleForm.recipient_type === 'group'}
-                      onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'group', recipient_id: '', recipient_name: '' })}
-                      className="text-brand-primary-600"
-                    />
+                    <input type="radio" checked={scheduleForm.recipient_type === 'group'} onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'group', recipient_id: '', recipient_name: '' })} className="text-brand-primary-600" />
                     <span>群組</span>
                   </label>
                   <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={scheduleForm.recipient_type === 'user'}
-                      onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'user', recipient_id: '', recipient_name: '' })}
-                      className="text-brand-primary-600"
-                    />
+                    <input type="radio" checked={scheduleForm.recipient_type === 'user'} onChange={() => setScheduleForm({ ...scheduleForm, recipient_type: 'user', recipient_id: '', recipient_name: '' })} className="text-brand-primary-600" />
                     <span>個人</span>
                   </label>
                 </div>
@@ -1826,11 +1596,7 @@ export default function LinePage() {
                     value={scheduleForm.recipient_id}
                     onChange={(e) => {
                       const selectedGroup = groups.find(g => g.group_id === e.target.value);
-                      setScheduleForm({
-                        ...scheduleForm,
-                        recipient_id: e.target.value,
-                        recipient_name: selectedGroup?.group_name || ''
-                      });
+                      setScheduleForm({ ...scheduleForm, recipient_id: e.target.value, recipient_name: selectedGroup?.group_name || '' });
                     }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   >
@@ -1850,26 +1616,15 @@ export default function LinePage() {
                 )}
               </div>
 
-              {/* 訊息內容 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">訊息內容 *</label>
                 <div className="flex gap-4 mb-2">
                   <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={scheduleForm.use_template}
-                      onChange={() => setScheduleForm({ ...scheduleForm, use_template: true })}
-                      className="text-brand-primary-600"
-                    />
+                    <input type="radio" checked={scheduleForm.use_template} onChange={() => setScheduleForm({ ...scheduleForm, use_template: true })} className="text-brand-primary-600" />
                     <span>使用模板</span>
                   </label>
                   <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={!scheduleForm.use_template}
-                      onChange={() => setScheduleForm({ ...scheduleForm, use_template: false })}
-                      className="text-brand-primary-600"
-                    />
+                    <input type="radio" checked={!scheduleForm.use_template} onChange={() => setScheduleForm({ ...scheduleForm, use_template: false })} className="text-brand-primary-600" />
                     <span>自訂內容</span>
                   </label>
                 </div>
@@ -1879,7 +1634,6 @@ export default function LinePage() {
                       value={scheduleForm.template_id}
                       onChange={(e) => {
                         setScheduleForm({ ...scheduleForm, template_id: e.target.value });
-                        // 重置變數值
                         const selectedTemplate = templates.find(t => t.id === e.target.value);
                         if (selectedTemplate?.variables) {
                           const vars: Record<string, string> = {};
@@ -1897,7 +1651,6 @@ export default function LinePage() {
                       ))}
                     </select>
 
-                    {/* 變數輸入區 */}
                     {scheduleForm.template_id && (() => {
                       const selectedTemplate = templates.find(t => t.id === scheduleForm.template_id);
                       if (!selectedTemplate?.variables?.length) return null;
@@ -1911,10 +1664,7 @@ export default function LinePage() {
                               <input
                                 type="text"
                                 value={scheduleVariables[varName] || ''}
-                                onChange={(e) => setScheduleVariables({
-                                  ...scheduleVariables,
-                                  [varName]: e.target.value
-                                })}
+                                onChange={(e) => setScheduleVariables({ ...scheduleVariables, [varName]: e.target.value })}
                                 placeholder={getVariablePlaceholder(varName)}
                                 className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                               />
@@ -1935,7 +1685,6 @@ export default function LinePage() {
                 )}
               </div>
 
-              {/* 排程類型 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">排程類型 *</label>
                 <div className="grid grid-cols-4 gap-2">
@@ -1952,10 +1701,7 @@ export default function LinePage() {
                       key={type.value}
                       type="button"
                       onClick={() => setScheduleForm({ ...scheduleForm, schedule_type: type.value as any })}
-                      className={`px-3 py-2 rounded-lg border text-sm ${scheduleForm.schedule_type === type.value
-                          ? 'bg-brand-primary-600 text-white border-brand-primary-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
+                      className={`px-3 py-2 rounded-lg border text-sm ${scheduleForm.schedule_type === type.value ? 'bg-brand-primary-600 text-white border-brand-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
                     >
                       {type.label}
                     </button>
@@ -1963,40 +1709,25 @@ export default function LinePage() {
                 </div>
               </div>
 
-              {/* 排程設定 */}
               {scheduleForm.schedule_type === 'once' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">發送時間 *</label>
-                  <input
-                    type="datetime-local"
-                    value={scheduleForm.scheduled_at}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_at: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                  />
+                  <input type="datetime-local" value={scheduleForm.scheduled_at} onChange={(e) => setScheduleForm({ ...scheduleForm, scheduled_at: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                 </div>
               )}
 
               {scheduleForm.schedule_type === 'daily' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">每日發送時間</label>
-                  <input
-                    type="time"
-                    value={scheduleForm.schedule_time}
-                    onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                  />
+                  <input type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                 </div>
               )}
 
-              {scheduleForm.schedule_type === 'weekly' && (
+              {(scheduleForm.schedule_type === 'weekly' || scheduleForm.schedule_type === 'biweekly') && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">每週幾</label>
-                    <select
-                      value={scheduleForm.schedule_day_of_week}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_week: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    >
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{scheduleForm.schedule_type === 'weekly' ? '每週幾' : '每兩週的週幾'}</label>
+                    <select value={scheduleForm.schedule_day_of_week} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_week: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
                       <option value={0}>週日</option>
                       <option value={1}>週一</option>
                       <option value={2}>週二</option>
@@ -2008,12 +1739,7 @@ export default function LinePage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">發送時間</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    />
+                    <input type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                   </div>
                 </div>
               )}
@@ -2022,155 +1748,67 @@ export default function LinePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">每月幾號</label>
-                    <select
-                      value={scheduleForm.schedule_day_of_month}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    >
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                        <option key={day} value={day}>{day} 日</option>
-                      ))}
+                    <select value={scheduleForm.schedule_day_of_month} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<option key={day} value={day}>{day} 日</option>))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">發送時間</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    />
+                    <input type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                   </div>
                 </div>
               )}
 
-              {/* 每兩週 */}
-              {scheduleForm.schedule_type === 'biweekly' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">每兩週的週幾</label>
-                    <select
-                      value={scheduleForm.schedule_day_of_week}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_week: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    >
-                      <option value={0}>週日</option>
-                      <option value={1}>週一</option>
-                      <option value={2}>週二</option>
-                      <option value={3}>週三</option>
-                      <option value={4}>週四</option>
-                      <option value={5}>週五</option>
-                      <option value={6}>週六</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">發送時間</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* 每月2次 */}
               {scheduleForm.schedule_type === 'twice_monthly' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">第一個日期</label>
-                      <select
-                        value={scheduleForm.schedule_day_of_month}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                      >
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                          <option key={day} value={day}>{day} 日</option>
-                        ))}
+                      <select value={scheduleForm.schedule_day_of_month} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<option key={day} value={day}>{day} 日</option>))}
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">第二個日期</label>
-                      <select
-                        value={scheduleForm.schedule_day_of_month_2}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month_2: parseInt(e.target.value) })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                      >
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                          <option key={day} value={day}>{day} 日</option>
-                        ))}
+                      <select value={scheduleForm.schedule_day_of_month_2} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month_2: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<option key={day} value={day}>{day} 日</option>))}
                       </select>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">發送時間</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    />
+                    <input type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                   </div>
                 </div>
               )}
 
-              {/* 每年 */}
               {scheduleForm.schedule_type === 'yearly' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">月份</label>
-                      <select
-                        value={scheduleForm.schedule_month}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_month: parseInt(e.target.value) })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                      >
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                          <option key={month} value={month}>{month} 月</option>
-                        ))}
+                      <select value={scheduleForm.schedule_month} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_month: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (<option key={month} value={month}>{month} 月</option>))}
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
-                      <select
-                        value={scheduleForm.schedule_day_of_month}
-                        onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                      >
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                          <option key={day} value={day}>{day} 日</option>
-                        ))}
+                      <select value={scheduleForm.schedule_day_of_month} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_day_of_month: parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500">
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (<option key={day} value={day}>{day} 日</option>))}
                       </select>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">發送時間</label>
-                    <input
-                      type="time"
-                      value={scheduleForm.schedule_time}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    />
+                    <input type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500" />
                   </div>
                 </div>
               )}
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowScheduleModal(false)}
-                disabled={isSavingSchedule}
-                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveSchedule}
-                disabled={isSavingSchedule}
-                className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
+              <button onClick={() => setShowScheduleModal(false)} disabled={isSavingSchedule} className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
+              <button onClick={handleSaveSchedule} disabled={isSavingSchedule} className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2">
                 {isSavingSchedule && <RefreshCw className="w-4 h-4 animate-spin" />}
                 {isSavingSchedule ? '儲存中...' : '儲存'}
               </button>
