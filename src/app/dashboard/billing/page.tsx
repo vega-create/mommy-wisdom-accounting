@@ -846,7 +846,7 @@ ${accountInfo}
                   <input
                     type="number"
                     value={form.amount}
-                    onChange={(e) => setForm({...form, amount: e.target.value})}
+                    onChange={(e) => setForm({...form, amount: e.target.value.replace(/^0+(?=\d)/, "")})}
                     placeholder="0"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
@@ -916,7 +916,7 @@ ${accountInfo}
                     <input
                       type="number"
                       value={form.cost_amount}
-                      onChange={(e) => setForm({...form, cost_amount: e.target.value})}
+                      onChange={(e) => setForm({...form, cost_amount: e.target.value.replace(/^0+(?=\d)/, "")})}
                       placeholder="0"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
@@ -1002,7 +1002,7 @@ ${accountInfo}
                 <input
                   type="number"
                   value={paymentForm.paid_amount}
-                  onChange={(e) => setPaymentForm({...paymentForm, paid_amount: e.target.value})}
+                  onChange={(e) => setPaymentForm({...paymentForm, paid_amount: e.target.value.replace(/^0+(?=\d)/, "")})}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
