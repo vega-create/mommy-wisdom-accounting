@@ -24,12 +24,12 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const body = await request.json();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: '未登入' }, { status: 401 });
+  const userId = user?.id || null;
 
   const { items, ...contractData } = body;
   const { data: numData } = await supabase.rpc('generate_contract_number', { p_company_id: contractData.company_id });
 
-  const contract = { ...contractData, contract_number: numData, created_by: user.id };
+  const contract = { ...contractData, contract_number: numData, created_by: userId };
   const { data, error } = await supabase.from('acct_contracts').insert(contract).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
