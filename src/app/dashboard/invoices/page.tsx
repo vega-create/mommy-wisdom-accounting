@@ -62,6 +62,9 @@ export default function InvoicesPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [voidReason, setVoidReason] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const defaultProducts = [
     { id: '1', name: '顧問費' },
@@ -255,6 +258,33 @@ export default function InvoicesPage() {
     } catch (e) { alert("刪除失敗"); }
   };
 
+  const filteredInvoices = invoices.filter(inv => {
+    if (statusFilter !== "all" && inv.status !== statusFilter) return false;
+    if (dateFrom && inv.invoice_date < dateFrom) return false;
+    if (dateTo && inv.invoice_date > dateTo) return false;
+    return true;
+  });
+
+  const handleExport = () => {
+    const headers = ["發票號碼", "買受人", "統編", "金額", "類型", "狀態", "開立日期"];
+    const rows = filteredInvoices.map(inv => [
+      inv.invoice_number,
+      inv.buyer_name,
+      inv.buyer_tax_id || "",
+      inv.total_amount,
+      inv.category,
+      inv.status,
+      inv.invoice_date || ""
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "invoices_" + new Date().toISOString().split("T")[0] + ".csv";
+    a.click();
+  };
+
   const statusLabels: Record<string, { label: string; color: string }> = {
     issued: { label: '已開立', color: 'bg-green-100 text-green-700' },
     voided: { label: '已作廢', color: 'bg-red-100 text-red-700' },
@@ -296,6 +326,30 @@ export default function InvoicesPage() {
           </div>
         </div>
       )}
+      {/* 篩選區 */}
+      <div className="bg-white rounded-xl border p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">日期：</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">狀態：</label>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">全部</option>
+              <option value="issued">已開立</option>
+              <option value="void">已作廢</option>
+            </select>
+          </div>
+          <button onClick={handleExport} className="ml-auto px-4 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm flex items-center gap-2">
+            匯出 CSV
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 mt-2">共 {filteredInvoices.length} 筆發票</p>
+      </div>
+
 
       <div className="bg-white rounded-xl border">
         {loading ? (
@@ -320,7 +374,7 @@ export default function InvoicesPage() {
               </tr>
             </thead>
             <tbody>
-              {invoices.map((inv) => (
+              {filteredInvoices.map((inv) => (
                 <tr key={inv.id} className="border-t hover:bg-gray-50">
                   <td className="p-4 font-mono">{inv.invoice_number}</td>
                   <td className="p-4">{inv.buyer_name}</td>
