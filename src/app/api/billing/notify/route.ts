@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 const LINE_API_URL = 'https://api.line.me/v2/bot/message/push';
 
 // 發送 LINE 訊息
@@ -40,6 +39,7 @@ function replaceVariables(content: string, variables: Record<string, string>) {
 // POST - 發送請款通知
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { billing_id, template_id, custom_message } = body;
 
@@ -83,7 +83,6 @@ export async function POST(request: NextRequest) {
     let finalMessage: string;
     
     if (custom_message) {
-      // 使用前端傳來的自訂訊息（已經編輯過的）
       finalMessage = custom_message;
     } else if (template_id) {
       const { data: template } = await supabase
@@ -103,7 +102,6 @@ export async function POST(request: NextRequest) {
       };
       finalMessage = replaceVariables(messageContent, variables);
     } else {
-      // 預設請款通知模板
       const account = billing.payment_account;
       const messageContent = `親愛的 {{customer_name}}，您好：
 
@@ -133,7 +131,7 @@ export async function POST(request: NextRequest) {
       finalMessage = replaceVariables(messageContent, variables);
     }
 
-    // 發送 LINE 訊息（優先發送到群組）
+    // 發送 LINE 訊息
     await sendLineMessage(
       lineSettings.channel_access_token,
       lineRecipientId,
