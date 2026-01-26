@@ -18,28 +18,31 @@ interface Invoice {
   category: string;
 }
 
+interface Customer {
+  id: string;
+  name: string;
+  tax_id: string;
+  email: string;
+  contact_person: string;
+}
+
 interface InvoiceSettings {
   merchant_id: string;
   hash_key: string;
   hash_iv: string;
 }
 
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-}
-
 export default function InvoicesPage() {
   const { company } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<InvoiceSettings | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [settingsForm, setSettingsForm] = useState({ merchant_id: '', hash_key: '', hash_iv: '' });
   const [issueForm, setIssueForm] = useState({
+    customer_id: '',
     buyer_name: '',
     buyer_email: '',
     buyer_tax_id: '',
@@ -48,87 +51,60 @@ export default function InvoicesPage() {
     total_price: '',
     carrier_type: '',
     carrier_num: '',
+    send_line: true,
   });
   const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showCustomItem, setShowCustomItem] = useState(false);
+  const [showCustomBuyer, setShowCustomBuyer] = useState(false);
 
-  // 常用品項清單
   const defaultProducts = [
-    { id: '1', name: '顧問費', price: 0 },
-    { id: '2', name: '設計費', price: 0 },
-    { id: '3', name: '服務費', price: 0 },
-    { id: '4', name: '廣告費', price: 0 },
-    { id: '5', name: '行銷費', price: 0 },
-    { id: '6', name: '企劃費', price: 0 },
-    { id: '7', name: '網站製作費', price: 0 },
-    { id: '8', name: '影片製作費', price: 0 },
-    { id: '9', name: '攝影費', price: 0 },
-    { id: '10', name: '活動費', price: 0 },
+    { id: '1', name: '顧問費' },
+    { id: '2', name: '設計費' },
+    { id: '3', name: '服務費' },
+    { id: '4', name: '廣告費' },
+    { id: '5', name: '行銷費' },
+    { id: '6', name: '企劃費' },
+    { id: '7', name: '網站製作費' },
+    { id: '8', name: '影片製作費' },
+    { id: '9', name: '攝影費' },
+    { id: '10', name: '活動費' },
   ];
 
   useEffect(() => {
     if (company?.id) {
       loadSettings();
       loadInvoices();
-      loadProducts();
+      loadCustomers();
     }
   }, [company]);
 
   const loadSettings = async () => {
-    const { data } = await supabase
-      .from('acct_invoice_settings')
-      .select('*')
-      .eq('company_id', company?.id)
-      .single();
-    
+    const { data } = await supabase.from('acct_invoice_settings').select('*').eq('company_id', company?.id).single();
     if (data) {
       setSettings(data);
-      setSettingsForm({
-        merchant_id: data.merchant_id || '',
-        hash_key: data.hash_key || '',
-        hash_iv: data.hash_iv || '',
-      });
+      setSettingsForm({ merchant_id: data.merchant_id || '', hash_key: data.hash_key || '', hash_iv: data.hash_iv || '' });
     }
   };
 
   const loadInvoices = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('acct_invoices')
-      .select('*')
-      .eq('company_id', company?.id)
-      .order('created_at', { ascending: false });
-    
+    const { data } = await supabase.from('acct_invoices').select('*').eq('company_id', company?.id).order('created_at', { ascending: false });
     setInvoices(data || []);
     setLoading(false);
   };
 
-  const loadProducts = async () => {
-    const { data } = await supabase
-      .from('acct_invoice_products')
-      .select('*')
-      .eq('company_id', company?.id)
-      .order('name');
-    
-    setProducts(data || []);
+  const loadCustomers = async () => {
+    const { data } = await supabase.from('acct_customers').select('id, name, tax_id, email, contact_person').eq('company_id', company?.id).order('name');
+    setCustomers(data || []);
   };
 
   const handleSaveSettings = async () => {
     if (!company?.id) return;
     setSaving(true);
     setMessage({ type: '', text: '' });
-
-    const { error } = await supabase
-      .from('acct_invoice_settings')
-      .upsert({
-        company_id: company.id,
-        merchant_id: settingsForm.merchant_id,
-        hash_key: settingsForm.hash_key,
-        hash_iv: settingsForm.hash_iv,
-      }, { onConflict: 'company_id' });
-
+    const { error } = await supabase.from('acct_invoice_settings').upsert({ company_id: company.id, ...settingsForm }, { onConflict: 'company_id' });
     setSaving(false);
     if (error) {
       setMessage({ type: 'error', text: '儲存失敗：' + error.message });
@@ -144,6 +120,29 @@ export default function InvoicesPage() {
     const amt = Math.round(total / 1.05);
     const tax = total - amt;
     return { amt, tax, total };
+  };
+
+  const handleSelectCustomer = (customerId: string) => {
+    if (customerId === '__custom__') {
+      setShowCustomBuyer(true);
+      setIssueForm({ ...issueForm, customer_id: '', buyer_name: '', buyer_email: '', buyer_tax_id: '', category: 'B2C' });
+    } else if (customerId) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        setShowCustomBuyer(false);
+        setIssueForm({
+          ...issueForm,
+          customer_id: customerId,
+          buyer_name: customer.name,
+          buyer_email: customer.email || '',
+          buyer_tax_id: customer.tax_id || '',
+          category: customer.tax_id ? 'B2B' : 'B2C',
+        });
+      }
+    } else {
+      setShowCustomBuyer(false);
+      setIssueForm({ ...issueForm, customer_id: '', buyer_name: '', buyer_email: '', buyer_tax_id: '' });
+    }
   };
 
   const handleSelectProduct = (productName: string) => {
@@ -179,13 +178,8 @@ export default function InvoicesPage() {
         category: issueForm.category,
         carrier_type: issueForm.carrier_type,
         carrier_num: issueForm.carrier_num,
-        items: [{
-          name: issueForm.item_name,
-          count: 1,
-          unit: '式',
-          price: amt,
-          amount: amt,
-        }],
+        send_line: issueForm.send_line,
+        items: [{ name: issueForm.item_name, count: 1, unit: '式', price: amt, amount: amt }],
       }),
     });
 
@@ -193,13 +187,28 @@ export default function InvoicesPage() {
     setIssuing(false);
 
     if (data.success) {
-      setMessage({ type: 'success', text: `發票開立成功！號碼：${data.result?.InvoiceNumber}` });
+      const invoiceNumber = data.result?.InvoiceNumber;
+      setMessage({ type: 'success', text: `發票開立成功！號碼：${invoiceNumber}` });
+      
+      // 發送 LINE 通知
+      if (issueForm.send_line) {
+        await fetch('/api/line/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: company.id,
+            message: `📄 發票開立通知\n\n發票號碼：${invoiceNumber}\n買受人：${issueForm.buyer_name}\n金額：$${parseInt(issueForm.total_price).toLocaleString()}\n品項：${issueForm.item_name}\n\n發票已開立完成！`,
+          }),
+        });
+      }
+
       loadInvoices();
       setTimeout(() => {
         setShowIssueModal(false);
-        setIssueForm({ buyer_name: '', buyer_email: '', buyer_tax_id: '', category: 'B2C', item_name: '', total_price: '', carrier_type: '', carrier_num: '' });
+        setIssueForm({ customer_id: '', buyer_name: '', buyer_email: '', buyer_tax_id: '', category: 'B2C', item_name: '', total_price: '', carrier_type: '', carrier_num: '', send_line: true });
         setMessage({ type: '', text: '' });
         setShowCustomItem(false);
+        setShowCustomBuyer(false);
       }, 2000);
     } else {
       setMessage({ type: 'error', text: `開立失敗：${data.message}` });
@@ -212,7 +221,6 @@ export default function InvoicesPage() {
   };
 
   const priceCalc = calcFromTotal(issueForm.total_price);
-  const allProducts = [...defaultProducts, ...products];
 
   return (
     <div className="space-y-6">
@@ -304,7 +312,7 @@ export default function InvoicesPage() {
             <div className="p-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">商店代號 (MerchantID)</label>
-                <input type="text" value={settingsForm.merchant_id} onChange={e => setSettingsForm({ ...settingsForm, merchant_id: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：347148408" />
+                <input type="text" value={settingsForm.merchant_id} onChange={e => setSettingsForm({ ...settingsForm, merchant_id: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">HashKey</label>
@@ -314,16 +322,10 @@ export default function InvoicesPage() {
                 <label className="block text-sm font-medium mb-1">HashIV</label>
                 <input type="text" value={settingsForm.hash_iv} onChange={e => setSettingsForm({ ...settingsForm, hash_iv: e.target.value })} className="w-full border rounded-lg px-4 py-2 font-mono text-sm" />
               </div>
-              {message.text && (
-                <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                  {message.text}
-                </div>
-              )}
+              {message.text && <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{message.text}</div>}
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowSettingsModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
-                <button onClick={handleSaveSettings} disabled={saving} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
-                  {saving ? '儲存中...' : '儲存設定'}
-                </button>
+                <button onClick={handleSaveSettings} disabled={saving} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">{saving ? '儲存中...' : '儲存設定'}</button>
               </div>
             </div>
           </div>
@@ -339,56 +341,61 @@ export default function InvoicesPage() {
               <button onClick={() => setShowIssueModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1">買受人名稱 *</label>
-                  <input type="text" value={issueForm.buyer_name} onChange={e => setIssueForm({ ...issueForm, buyer_name: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Email</label>
-                  <input type="email" value={issueForm.buyer_email} onChange={e => setIssueForm({ ...issueForm, buyer_email: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">發票類型</label>
-                  <select value={issueForm.category} onChange={e => setIssueForm({ ...issueForm, category: e.target.value })} className="w-full border rounded-lg px-4 py-2">
-                    <option value="B2C">B2C (個人)</option>
-                    <option value="B2B">B2B (公司)</option>
-                  </select>
-                </div>
-                {issueForm.category === 'B2B' && (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium mb-1">統一編號 *</label>
-                    <input type="text" value={issueForm.buyer_tax_id} onChange={e => setIssueForm({ ...issueForm, buyer_tax_id: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
-                  </div>
-                )}
+              {/* 買受人選擇 */}
+              <div>
+                <label className="block text-sm font-medium mb-1">買受人 *</label>
+                <select onChange={e => handleSelectCustomer(e.target.value)} className="w-full border rounded-lg px-4 py-2" value={showCustomBuyer ? '__custom__' : issueForm.customer_id}>
+                  <option value="">-- 選擇客戶 --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}{c.tax_id ? ` (${c.tax_id})` : ''}</option>
+                  ))}
+                  <option value="__custom__">✏️ 自行輸入...</option>
+                </select>
               </div>
+
+              {showCustomBuyer && (
+                <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">買受人名稱 *</label>
+                    <input type="text" value={issueForm.buyer_name} onChange={e => setIssueForm({ ...issueForm, buyer_name: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Email</label>
+                    <input type="email" value={issueForm.buyer_email} onChange={e => setIssueForm({ ...issueForm, buyer_email: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">統編</label>
+                    <input type="text" value={issueForm.buyer_tax_id} onChange={e => setIssueForm({ ...issueForm, buyer_tax_id: e.target.value, category: e.target.value ? 'B2B' : 'B2C' })} className="w-full border rounded-lg px-4 py-2" />
+                  </div>
+                </div>
+              )}
+
+              {!showCustomBuyer && issueForm.buyer_name && (
+                <div className="p-3 bg-blue-50 rounded-lg text-sm">
+                  <p><strong>{issueForm.buyer_name}</strong></p>
+                  {issueForm.buyer_tax_id && <p>統編：{issueForm.buyer_tax_id}</p>}
+                  {issueForm.buyer_email && <p>Email：{issueForm.buyer_email}</p>}
+                  <p>發票類型：{issueForm.category === 'B2B' ? 'B2B (公司)' : 'B2C (個人)'}</p>
+                </div>
+              )}
 
               <hr />
 
+              {/* 品項選擇 */}
               <div>
                 <label className="block text-sm font-medium mb-1">品項名稱 *</label>
-                <select 
-                  onChange={e => handleSelectProduct(e.target.value)} 
-                  className="w-full border rounded-lg px-4 py-2 mb-2"
-                  value={showCustomItem ? '__custom__' : issueForm.item_name}
-                >
+                <select onChange={e => handleSelectProduct(e.target.value)} className="w-full border rounded-lg px-4 py-2" value={showCustomItem ? '__custom__' : issueForm.item_name}>
                   <option value="">-- 選擇品項 --</option>
-                  {allProducts.map(p => (
+                  {defaultProducts.map(p => (
                     <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
                   <option value="__custom__">✏️ 自行輸入...</option>
                 </select>
                 {showCustomItem && (
-                  <input 
-                    type="text" 
-                    value={issueForm.item_name} 
-                    onChange={e => setIssueForm({ ...issueForm, item_name: e.target.value })} 
-                    className="w-full border rounded-lg px-4 py-2" 
-                    placeholder="輸入自訂品項名稱"
-                    autoFocus
-                  />
+                  <input type="text" value={issueForm.item_name} onChange={e => setIssueForm({ ...issueForm, item_name: e.target.value })} className="w-full border rounded-lg px-4 py-2 mt-2" placeholder="輸入自訂品項名稱" autoFocus />
                 )}
               </div>
+
               <div>
                 <label className="block text-sm font-medium mb-1">金額（含稅）*</label>
                 <input type="number" value={issueForm.total_price} onChange={e => setIssueForm({ ...issueForm, total_price: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：10500" />
@@ -416,16 +423,18 @@ export default function InvoicesPage() {
                 {issueForm.carrier_type && (
                   <div>
                     <label className="block text-sm font-medium mb-1">載具號碼</label>
-                    <input type="text" value={issueForm.carrier_num} onChange={e => setIssueForm({ ...issueForm, carrier_num: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder={issueForm.carrier_type === '0' ? '/ABC+123' : ''} />
+                    <input type="text" value={issueForm.carrier_num} onChange={e => setIssueForm({ ...issueForm, carrier_num: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
                   </div>
                 )}
               </div>
 
-              {message.text && (
-                <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                  {message.text}
-                </div>
-              )}
+              {/* LINE 通知 */}
+              <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                <input type="checkbox" id="send_line" checked={issueForm.send_line} onChange={e => setIssueForm({ ...issueForm, send_line: e.target.checked })} className="w-4 h-4" />
+                <label htmlFor="send_line" className="text-sm">發送 LINE 通知到群組</label>
+              </div>
+
+              {message.text && <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{message.text}</div>}
 
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowIssueModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
