@@ -496,8 +496,6 @@ export default function InvoicesPage() {
           </div>
         </div>
       )}
-    </div>
-
       {/* 查看發票 Modal */}
       {showViewModal && selectedInvoice && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowViewModal(false)}>
