@@ -7,7 +7,7 @@ const EZPAY_URL = 'https://inv.ezpay.com.tw/Api/invoice_issue';
 
 function addPadding(data: string): string {
   const blockSize = 32;
-  const len = data.length;
+  const len = Buffer.byteLength(data, 'utf8');
   const pad = blockSize - (len % blockSize);
   return data + String.fromCharCode(pad).repeat(pad);
 }
