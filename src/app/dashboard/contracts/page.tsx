@@ -17,6 +17,9 @@ export default function ContractsPage() {
   const { company } = useAuthStore();
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     if (company?.id) fetchContracts();
@@ -42,11 +45,63 @@ export default function ContractsPage() {
     const data = await res.json();
     if (data.sign_url) {
       await navigator.clipboard.writeText(data.sign_url);
-      alert('簽署連結已複製到剪貼簿！\n\n' + data.sign_url);
+      const lineMsg = data.line_sent ? '\n\n✅ 已發送 LINE 通知' : '';
+      alert('簽署連結已複製到剪貼簿！\n\n' + data.sign_url + lineMsg);
       fetchContracts();
     } else {
       alert(data.error || '產生連結失敗');
     }
+  };
+
+  const handleSendLine = async (contract: any) => {
+    if (!contract.signature_token) {
+      alert('請先產生簽署連結');
+      return;
+    }
+    const signUrl = `https://mommy-wisdom-accounting.vercel.app/sign/${contract.signature_token}`;
+    const res = await fetch('/api/line/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company_id: company?.id,
+        recipient_type: 'group',
+        recipient_id: contract.customer?.line_group_id,
+        recipient_name: contract.customer?.line_group_name,
+        content: `📋 合約簽署通知\n\n合約編號：${contract.contract_number}\n主旨：${contract.title}\n金額：$${contract.total_amount?.toLocaleString()}\n\n請點擊下方連結進行簽署：\n${signUrl}`,
+      }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('LINE 通知已發送！');
+    } else {
+      alert(data.error || '發送失敗');
+    }
+  };
+
+  const filteredContracts = contracts.filter(c => {
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+    if (dateFrom && c.contract_date < dateFrom) return false;
+    if (dateTo && c.contract_date > dateTo) return false;
+    return true;
+  });
+
+  const handleExport = () => {
+    const headers = ['合約編號', '客戶', '主旨', '金額', '狀態', '日期'];
+    const rows = filteredContracts.map(c => [
+      c.contract_number,
+      c.customer_name,
+      c.title,
+      c.total_amount,
+      statusLabels[c.status] || c.status,
+      c.contract_date || ''
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'contracts_' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
   };
 
   if (!company) {
@@ -62,9 +117,36 @@ export default function ContractsPage() {
         </Link>
       </div>
 
+      {/* 篩選區 */}
+      <div className="bg-white rounded-xl border p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">日期：</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">狀態：</label>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">全部</option>
+              <option value="draft">草稿</option>
+              <option value="pending_signature">待簽署</option>
+              <option value="signed">已簽署</option>
+              <option value="active">執行中</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <button onClick={handleExport} className="ml-auto px-4 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm">
+            匯出 CSV
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 mt-2">共 {filteredContracts.length} 筆合約</p>
+      </div>
+
       {loading ? (
         <div className="text-center py-10">載入中...</div>
-      ) : contracts.length === 0 ? (
+      ) : filteredContracts.length === 0 ? (
         <div className="text-center py-10 text-gray-500">尚無合約</div>
       ) : (
         <div className="bg-white rounded-xl shadow overflow-hidden">
@@ -81,7 +163,7 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {contracts.map((c) => (
+              {filteredContracts.map((c) => (
                 <tr key={c.id} className="border-t hover:bg-gray-50">
                   <td className="p-4 font-mono">{c.contract_number}</td>
                   <td className="p-4">{c.customer_name}</td>
@@ -96,7 +178,12 @@ export default function ContractsPage() {
                       <Link href={`/dashboard/contracts/${c.id}`} className="text-blue-600 hover:underline text-sm">編輯</Link>
                       {(c.status === 'draft' || c.status === 'pending_signature') && (
                         <button onClick={() => handleGenerateLink(c.id)} className="text-green-600 hover:underline text-sm">
-                          {c.status === 'draft' ? '產生簽署連結' : '複製連結'}
+                          {c.status === 'draft' ? '產生連結' : '複製連結'}
+                        </button>
+                      )}
+                      {c.status === 'pending_signature' && c.customer?.line_group_id && (
+                        <button onClick={() => handleSendLine(c)} className="text-purple-600 hover:underline text-sm">
+                          LINE通知
                         </button>
                       )}
                       <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:underline text-sm">刪除</button>
