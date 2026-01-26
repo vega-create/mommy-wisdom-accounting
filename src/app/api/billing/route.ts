@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       cost_description,
       payment_account_id: payment_account_id || null,
       due_date,
-      created_by
+      created_by: created_by || null
     } = body;
 
     if (!company_id || !customer_name || !amount || !due_date || !title) {
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
         payment_account_id: payment_account_id || null,
         due_date,
         status: 'draft',
-        created_by
+        created_by: created_by || null
       })
       .select()
       .single();
