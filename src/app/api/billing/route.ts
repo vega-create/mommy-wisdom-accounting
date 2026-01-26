@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       company_id,
-      customer_id,
+      customer_id: customer_id || null,
       customer_name,
       customer_email,
       customer_line_id,
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       cost_vendor_id,
       cost_vendor_name,
       cost_description,
-      payment_account_id,
+      payment_account_id: payment_account_id || null,
       due_date,
       created_by
     } = body;
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       .insert({
         company_id,
         billing_number,
-        customer_id,
+        customer_id: customer_id || null,
         customer_name,
         customer_email,
         customer_line_id,
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         cost_vendor_id: cost_vendor_id || null,
         cost_vendor_name: cost_vendor_name || null,
         cost_description,
-        payment_account_id,
+        payment_account_id: payment_account_id || null,
         due_date,
         status: 'draft',
         created_by
