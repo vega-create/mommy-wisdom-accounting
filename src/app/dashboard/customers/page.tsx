@@ -79,7 +79,7 @@ const vendorTypeLabels: Record<VendorType, string> = {
 
 export default function CustomersPage() {
   const { company } = useAuthStore();
-  
+
   // State
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -260,12 +260,12 @@ export default function CustomersPage() {
 
     setIsSaving(true);
     try {
-      const url = editingCustomer 
-        ? `/api/customers?id=${editingCustomer.id}` 
+      const url = editingCustomer
+        ? `/api/customers?id=${editingCustomer.id}`
         : '/api/customers';
-      
+
       const method = editingCustomer ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -323,7 +323,7 @@ export default function CustomersPage() {
           <p className="text-gray-500 mt-1">管理您的客戶與廠商資料，支援 LINE 通知與請款設定</p>
         </div>
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={loadCustomers}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
           >
@@ -405,11 +405,10 @@ export default function CustomersPage() {
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filterType === type
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === type
                     ? 'bg-brand-primary-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {type === 'all' ? '全部' : type === 'customer' ? '客戶' : '廠商'}
               </button>
@@ -563,11 +562,10 @@ export default function CustomersPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === tab.id
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                       ? 'border-brand-primary-600 text-brand-primary-700'
                       : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
+                    }`}
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
@@ -588,11 +586,10 @@ export default function CustomersPage() {
                           key={type}
                           type="button"
                           onClick={() => setFormData({ ...formData, customer_type: type })}
-                          className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                            formData.customer_type === type
+                          className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.customer_type === type
                               ? 'bg-brand-primary-600 text-white'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          }`}
+                            }`}
                         >
                           {customerTypeLabels[type].label}
                         </button>
@@ -611,11 +608,10 @@ export default function CustomersPage() {
                               key={type}
                               type="button"
                               onClick={() => setFormData({ ...formData, vendor_type: type, is_internal: false })}
-                              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                                formData.vendor_type === type && !formData.is_internal
+                              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.vendor_type === type && !formData.is_internal
                                   ? 'bg-blue-600 text-white'
                                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                              }`}
+                                }`}
                             >
                               外部{vendorTypeLabels[type]}
                             </button>
@@ -623,11 +619,10 @@ export default function CustomersPage() {
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, vendor_type: 'individual', is_internal: true })}
-                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                              formData.is_internal
+                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.is_internal
                                 ? 'bg-purple-600 text-white'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
+                              }`}
                           >
                             內部人員
                           </button>
@@ -803,14 +798,12 @@ export default function CustomersPage() {
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        formData.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'
-                      }`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.is_active ? 'bg-brand-primary-600' : 'bg-gray-300'
+                        }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          formData.is_active ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.is_active ? 'translate-x-6' : 'translate-x-1'
+                          }`}
                       />
                     </button>
                   </div>
@@ -871,28 +864,26 @@ export default function CustomersPage() {
                   </div>
 
                   {/* Vendor specific: can issue invoice */}
-                  {(formData.customer_type === 'vendor' || formData.customer_type === 'both') && 
-                   formData.vendor_type === 'company' && (
-                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                      <div>
-                        <span className="text-sm font-medium text-gray-700">廠商會開發票</span>
-                        <p className="text-xs text-gray-500">公司型廠商是否會開立發票給我們</p>
+                  {(formData.customer_type === 'vendor' || formData.customer_type === 'both') &&
+                    formData.vendor_type === 'company' && (
+                      <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">廠商會開發票</span>
+                          <p className="text-xs text-gray-500">公司型廠商是否會開立發票給我們</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, can_issue_invoice: !formData.can_issue_invoice })}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.can_issue_invoice ? 'bg-blue-600' : 'bg-gray-300'
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.can_issue_invoice ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, can_issue_invoice: !formData.can_issue_invoice })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          formData.can_issue_invoice ? 'bg-blue-600' : 'bg-gray-300'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            formData.can_issue_invoice ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  )}
+                    )}
                 </>
               )}
 
@@ -907,14 +898,12 @@ export default function CustomersPage() {
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, line_notify_enabled: !formData.line_notify_enabled })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        formData.line_notify_enabled ? 'bg-green-600' : 'bg-gray-300'
-                      }`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${formData.line_notify_enabled ? 'bg-green-600' : 'bg-gray-300'
+                        }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          formData.line_notify_enabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.line_notify_enabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
                       />
                     </button>
                   </div>
@@ -926,8 +915,8 @@ export default function CustomersPage() {
                       value={formData.line_group_id}
                       onChange={e => {
                         const group = lineGroups.find(g => g.group_id === e.target.value);
-                        setFormData({ 
-                          ...formData, 
+                        setFormData({
+                          ...formData,
                           line_group_id: e.target.value,
                           line_group_name: group?.group_name || ''
                         });
@@ -990,7 +979,7 @@ export default function CustomersPage() {
               <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
                 取消
               </button>
-              <button 
+              <button
                 onClick={handleSubmit}
                 disabled={isSaving}
                 className="btn-primary flex-1 flex items-center justify-center gap-2"
