@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 // GET - 取得客戶列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const customerType = searchParams.get('customer_type');
@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
 // POST - 新增客戶
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     console.log('Creating customer:', body);
 
@@ -101,7 +102,6 @@ export async function POST(request: NextRequest) {
       is_active: true,
     };
 
-    // 可選欄位
     if (short_name) insertData.short_name = short_name;
     if (tax_id) insertData.tax_id = tax_id;
     if (contact_person) insertData.contact_person = contact_person;
@@ -136,9 +136,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `新增失敗: ${error.message}` }, { status: 500 });
     }
 
-    // 如果是廠商且為個人（外部個人或內部人員），同步到 freelancers
-    if ((customer_type === 'vendor' || customer_type === 'both') && 
-        (vendor_type === 'individual' || vendor_type === 'internal')) {
+    if ((customer_type === 'vendor' || customer_type === 'both') &&
+      (vendor_type === 'individual' || vendor_type === 'internal')) {
       try {
         const freelancerData: Record<string, any> = {
           company_id,
@@ -161,12 +160,11 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (freelancer && !freelancerError) {
-          // 更新 customer 的 freelancer_id
           await supabase
             .from('acct_customers')
             .update({ freelancer_id: freelancer.id })
             .eq('id', data.id);
-          
+
           console.log('Synced to freelancer:', freelancer.id);
         }
       } catch (syncError) {
@@ -184,6 +182,7 @@ export async function POST(request: NextRequest) {
 // PUT - 更新客戶
 export async function PUT(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const body = await request.json();
@@ -223,7 +222,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: `更新失敗: ${error.message}` }, { status: 500 });
     }
 
-    // 如果有關聯的 freelancer，同步更新
     if (data.freelancer_id) {
       const freelancerUpdate: Record<string, any> = { updated_at: new Date().toISOString() };
       if (body.name) freelancerUpdate.name = body.name;
@@ -251,6 +249,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - 刪除客戶
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
