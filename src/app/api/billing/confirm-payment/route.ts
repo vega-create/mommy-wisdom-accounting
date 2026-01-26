@@ -3,10 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 const LINE_API_URL = 'https://api.line.me/v2/bot/message/push';
 
-// 發送 LINE 訊息
 async function sendLineMessage(accessToken: string, to: string, text: string) {
   const response = await fetch(LINE_API_URL, {
     method: 'POST',
@@ -19,40 +17,16 @@ async function sendLineMessage(accessToken: string, to: string, text: string) {
       messages: [{ type: 'text', text }]
     }),
   });
-
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.message || 'LINE API 錯誤');
   }
-
   return response;
 }
 
-// 產生應付單號
-async function generatePayableNumber(companyId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, '0');
-  
-  const { data } = await supabase
-    .from('acct_payable_requests')
-    .select('payable_number')
-    .eq('company_id', companyId)
-    .like('payable_number', `PAY${year}${month}%`)
-    .order('payable_number', { ascending: false })
-    .limit(1);
-  
-  let seq = 1;
-  if (data && data.length > 0) {
-    const lastNum = data[0].payable_number;
-    seq = parseInt(lastNum.slice(-4)) + 1;
-  }
-  
-  return `PAY${year}${month}${String(seq).padStart(4, '0')}`;
-}
-
-// POST - 確認收款
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { 
       billing_id, 
@@ -67,7 +41,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
     }
 
-    // 取得請款單資料
     const { data: billing, error: billingError } = await supabase
       .from('acct_billing_requests')
       .select('*')
@@ -85,20 +58,21 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
 
-    // 1. 更新請款單狀態
+    // 更新請款單狀態
     await supabase
       .from('acct_billing_requests')
       .update({
         status: 'paid',
         paid_at: now,
         paid_amount: parseFloat(paid_amount),
-        payment_method,
-        payment_note,
+        payment_method: payment_method || null,
+        payment_note: payment_note || null,
+        paid_account_id: bank_account_id || null,
         updated_at: now
       })
       .eq('id', billing_id);
 
-    // 2. 建立交易記錄（收入）- 使用正確欄位名稱
+    // 建立交易記錄
     const { data: transaction, error: transactionError } = await supabase
       .from('acct_transactions')
       .insert({
@@ -107,7 +81,7 @@ export async function POST(request: NextRequest) {
         transaction_type: 'income',
         description: `${billing.title} - ${billing.customer_name}`,
         amount: parseFloat(paid_amount),
-        customer_id: billing.customer_id,
+        customer_id: billing.customer_id || null,
         bank_account_id: bank_account_id || null,
         notes: payment_note || `請款單收款：${billing.billing_number}`
       })
@@ -118,7 +92,6 @@ export async function POST(request: NextRequest) {
       console.error('Transaction insert error:', transactionError);
     }
 
-    // 3. 更新請款單關聯交易
     if (transaction) {
       await supabase
         .from('acct_billing_requests')
@@ -126,13 +99,15 @@ export async function POST(request: NextRequest) {
         .eq('id', billing_id);
     }
 
-    // 4. 如果有成本，自動建立應付款項
+    // 如果有成本，建立應付款項
     let payableId = null;
     if (billing.cost_amount > 0 && (billing.cost_vendor_id || billing.cost_vendor_name)) {
       try {
-        const payableNumber = await generatePayableNumber(billing.company_id);
-        
-        const { data: payable, error: payableError } = await supabase
+        const year = new Date().getFullYear();
+        const month = String(new Date().getMonth() + 1).padStart(2, '0');
+        const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
+
+        const { data: payable } = await supabase
           .from('acct_payable_requests')
           .insert({
             company_id: billing.company_id,
@@ -143,22 +118,20 @@ export async function POST(request: NextRequest) {
             title: `${billing.title} - 外包成本`,
             description: `來源請款單：${billing.billing_number}`,
             amount: billing.cost_amount,
-            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7天後
+            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'pending',
             billing_request_id: billing.id
           })
           .select()
           .single();
 
-        if (!payableError && payable) {
-          payableId = payable.id;
-        }
-      } catch (payableErr) {
-        console.error('Create payable error:', payableErr);
+        if (payable) payableId = payable.id;
+      } catch (e) {
+        console.error('Create payable error:', e);
       }
     }
 
-    // 5. 發送收款確認通知（可選）
+    // 發送 LINE 通知
     const lineRecipientId = billing.customer_line_group_id || billing.customer_line_id;
     if (send_notification && lineRecipientId) {
       try {
@@ -170,55 +143,19 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (lineSettings?.channel_access_token) {
-          const message = `親愛的 ${billing.customer_name}，您好：
+          const message = `親愛的 ${billing.customer_name}，您好：\n\n已收到您的款項 NT$ ${parseFloat(paid_amount).toLocaleString()} 元，感謝您的付款！\n\n📋 請款單號：${billing.billing_number}\n📅 收款日期：${new Date().toLocaleDateString('zh-TW')}\n\n發票將於近日開立並寄送。\n\n智慧媽咪國際 敬上`;
 
-已收到您的款項 NT$ ${parseFloat(paid_amount).toLocaleString()} 元，感謝您的付款！
-
-📋 請款單號：${billing.billing_number}
-📅 收款日期：${new Date().toLocaleDateString('zh-TW')}
-
-發票將於近日開立並寄送。
-
-智慧媽咪國際 敬上`;
-
-          await sendLineMessage(
-            lineSettings.channel_access_token,
-            lineRecipientId,
-            message
-          );
-
-          // 記錄發送
-          await supabase
-            .from('acct_line_messages')
-            .insert({
-              company_id: billing.company_id,
-              recipient_type: billing.customer_line_group_id ? 'group' : 'user',
-              recipient_id: lineRecipientId,
-              recipient_name: billing.customer_line_group_name || billing.customer_name,
-              message_type: 'text',
-              content: message,
-              status: 'sent',
-              sent_at: now
-            });
+          await sendLineMessage(lineSettings.channel_access_token, lineRecipientId, message);
         }
-      } catch (lineError) {
-        console.error('LINE notification error:', lineError);
+      } catch (e) {
+        console.error('LINE error:', e);
       }
     }
 
     return NextResponse.json({ 
       success: true, 
-      message: billing.cost_amount > 0 
-        ? '收款確認完成，已建立應付款項提醒'
-        : '收款確認完成',
-      data: {
-        billing_id,
-        transaction_id: transaction?.id,
-        payable_id: payableId,
-        paid_amount,
-        has_cost: billing.cost_amount > 0,
-        notification_sent: send_notification && !!lineRecipientId
-      }
+      message: '收款確認完成',
+      data: { billing_id, transaction_id: transaction?.id, payable_id: payableId }
     });
 
   } catch (error) {
