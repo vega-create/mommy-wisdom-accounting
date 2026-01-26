@@ -24,11 +24,18 @@ interface InvoiceSettings {
   hash_iv: string;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+}
+
 export default function InvoicesPage() {
   const { company } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<InvoiceSettings | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [settingsForm, setSettingsForm] = useState({ merchant_id: '', hash_key: '', hash_iv: '' });
@@ -45,11 +52,27 @@ export default function InvoicesPage() {
   const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [showCustomItem, setShowCustomItem] = useState(false);
+
+  // 常用品項清單
+  const defaultProducts = [
+    { id: '1', name: '顧問費', price: 0 },
+    { id: '2', name: '設計費', price: 0 },
+    { id: '3', name: '服務費', price: 0 },
+    { id: '4', name: '廣告費', price: 0 },
+    { id: '5', name: '行銷費', price: 0 },
+    { id: '6', name: '企劃費', price: 0 },
+    { id: '7', name: '網站製作費', price: 0 },
+    { id: '8', name: '影片製作費', price: 0 },
+    { id: '9', name: '攝影費', price: 0 },
+    { id: '10', name: '活動費', price: 0 },
+  ];
 
   useEffect(() => {
     if (company?.id) {
       loadSettings();
       loadInvoices();
+      loadProducts();
     }
   }, [company]);
 
@@ -82,6 +105,16 @@ export default function InvoicesPage() {
     setLoading(false);
   };
 
+  const loadProducts = async () => {
+    const { data } = await supabase
+      .from('acct_invoice_products')
+      .select('*')
+      .eq('company_id', company?.id)
+      .order('name');
+    
+    setProducts(data || []);
+  };
+
   const handleSaveSettings = async () => {
     if (!company?.id) return;
     setSaving(true);
@@ -106,12 +139,21 @@ export default function InvoicesPage() {
     }
   };
 
-  // 含稅轉未稅計算
   const calcFromTotal = (totalPrice: string) => {
     const total = parseInt(totalPrice) || 0;
     const amt = Math.round(total / 1.05);
     const tax = total - amt;
     return { amt, tax, total };
+  };
+
+  const handleSelectProduct = (productName: string) => {
+    if (productName === '__custom__') {
+      setShowCustomItem(true);
+      setIssueForm({ ...issueForm, item_name: '' });
+    } else {
+      setShowCustomItem(false);
+      setIssueForm({ ...issueForm, item_name: productName });
+    }
   };
 
   const handleIssueInvoice = async () => {
@@ -157,6 +199,7 @@ export default function InvoicesPage() {
         setShowIssueModal(false);
         setIssueForm({ buyer_name: '', buyer_email: '', buyer_tax_id: '', category: 'B2C', item_name: '', total_price: '', carrier_type: '', carrier_num: '' });
         setMessage({ type: '', text: '' });
+        setShowCustomItem(false);
       }, 2000);
     } else {
       setMessage({ type: 'error', text: `開立失敗：${data.message}` });
@@ -169,6 +212,7 @@ export default function InvoicesPage() {
   };
 
   const priceCalc = calcFromTotal(issueForm.total_price);
+  const allProducts = [...defaultProducts, ...products];
 
   return (
     <div className="space-y-6">
@@ -323,7 +367,27 @@ export default function InvoicesPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">品項名稱 *</label>
-                <input type="text" value={issueForm.item_name} onChange={e => setIssueForm({ ...issueForm, item_name: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：顧問服務費" />
+                <select 
+                  onChange={e => handleSelectProduct(e.target.value)} 
+                  className="w-full border rounded-lg px-4 py-2 mb-2"
+                  value={showCustomItem ? '__custom__' : issueForm.item_name}
+                >
+                  <option value="">-- 選擇品項 --</option>
+                  {allProducts.map(p => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
+                  ))}
+                  <option value="__custom__">✏️ 自行輸入...</option>
+                </select>
+                {showCustomItem && (
+                  <input 
+                    type="text" 
+                    value={issueForm.item_name} 
+                    onChange={e => setIssueForm({ ...issueForm, item_name: e.target.value })} 
+                    className="w-full border rounded-lg px-4 py-2" 
+                    placeholder="輸入自訂品項名稱"
+                    autoFocus
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">金額（含稅）*</label>
