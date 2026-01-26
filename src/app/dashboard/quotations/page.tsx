@@ -17,6 +17,9 @@ export default function QuotationsPage() {
   const { company } = useAuthStore();
   const [quotations, setQuotations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     if (company?.id) {
@@ -49,6 +52,7 @@ export default function QuotationsPage() {
       alert(data.error || "產生連結失敗");
     }
   };
+
   const handleDelete = async (id: string) => {
     if (!confirm('確定刪除此報價單？')) return;
     await fetch(`/api/quotations/${id}`, { method: 'DELETE' });
@@ -67,6 +71,32 @@ export default function QuotationsPage() {
     }
   };
 
+  const filteredQuotations = quotations.filter(q => {
+    if (statusFilter !== 'all' && q.status !== statusFilter) return false;
+    if (dateFrom && q.quotation_date < dateFrom) return false;
+    if (dateTo && q.quotation_date > dateTo) return false;
+    return true;
+  });
+
+  const handleExport = () => {
+    const headers = ['報價單號', '客戶', '主旨', '金額', '狀態', '日期'];
+    const rows = filteredQuotations.map(q => [
+      q.quotation_number,
+      q.customer_name,
+      q.title,
+      q.total_amount,
+      statusLabels[q.status] || q.status,
+      q.quotation_date || ''
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'quotations_' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
+  };
+
   if (!company) {
     return <div className="p-6 text-center text-gray-500">請先選擇公司</div>;
   }
@@ -80,9 +110,35 @@ export default function QuotationsPage() {
         </Link>
       </div>
 
+      {/* 篩選區 */}
+      <div className="bg-white rounded-xl border p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">日期：</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">狀態：</label>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm">
+              <option value="all">全部</option>
+              <option value="draft">草稿</option>
+              <option value="sent">已發送</option>
+              <option value="accepted">已接受</option>
+              <option value="converted">已轉合約</option>
+            </select>
+          </div>
+          <button onClick={handleExport} className="ml-auto px-4 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm">
+            匯出 CSV
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 mt-2">共 {filteredQuotations.length} 筆報價單</p>
+      </div>
+
       {loading ? (
         <div className="text-center py-10">載入中...</div>
-      ) : quotations.length === 0 ? (
+      ) : filteredQuotations.length === 0 ? (
         <div className="text-center py-10 text-gray-500">尚無報價單，點擊右上角新增</div>
       ) : (
         <div className="bg-white rounded-xl shadow overflow-hidden">
@@ -99,7 +155,7 @@ export default function QuotationsPage() {
               </tr>
             </thead>
             <tbody>
-              {quotations.map((q) => (
+              {filteredQuotations.map((q) => (
                 <tr key={q.id} className="border-t hover:bg-gray-50">
                   <td className="p-4 font-mono">{q.quotation_number}</td>
                   <td className="p-4">{q.customer_name}</td>
@@ -112,7 +168,7 @@ export default function QuotationsPage() {
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-2">
                       <Link href={`/dashboard/quotations/${q.id}`} className="text-blue-600 hover:underline text-sm">編輯</Link>
-                      {q.status === "draft" || q.status === "sent" && (
+                      {(q.status === "draft" || q.status === "sent") && (
                         <button onClick={() => handleSendLink(q.id)} className="text-green-600 hover:underline text-sm">產生連結</button>
                       )}
                       {q.status !== 'converted' && (
