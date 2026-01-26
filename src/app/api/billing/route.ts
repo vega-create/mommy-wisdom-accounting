@@ -4,7 +4,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 // 處理空字串為 null
-function cleanUuidFields(obj: any) {
+function cleanFields(obj: any) {
+  // 處理數字欄位
+  const numericFields = ["amount", "tax_amount", "total_amount", "cost_amount", "paid_amount"];
+  for (const field of numericFields) {
+    if (obj[field] === "" || obj[field] === undefined) {
+      obj[field] = null;
+    } else if (obj[field] !== null) {
+      obj[field] = parseFloat(obj[field]);
+    }
+  }
+
   const uuidFields = ['customer_id', 'payment_account_id', 'cost_vendor_id', 'created_by', 'paid_account_id', 'payment_method_id', 'transaction_id', 'invoice_id', 'service_category_id'];
   for (const field of uuidFields) {
     if (obj[field] === '' || obj[field] === undefined) {
@@ -118,7 +128,7 @@ export async function POST(request: NextRequest) {
       created_by: created_by || null
     };
 
-    insertData = cleanUuidFields(insertData);
+    insertData = cleanFields(insertData);
 
     const { data, error } = await supabase
       .from('acct_billing_requests')
@@ -151,7 +161,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // 處理空字串 UUID
-    updates = cleanUuidFields(updates);
+    updates = cleanFields(updates);
 
     // 重新計算總金額
     if (updates.amount !== undefined || updates.tax_amount !== undefined) {
