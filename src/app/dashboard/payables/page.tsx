@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import { 
+import {
   Banknote, Plus, Check, Clock, AlertCircle,
   Edit2, Trash2, RefreshCw, Calendar, User,
   Building, X, CheckCircle, FileText
@@ -40,8 +41,15 @@ export default function PayablesPage() {
   const [payables, setPayables] = useState<PayableRequest[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const filterFromUrl = searchParams.get('filter') || 'pending';
+  const [statusFilter, setStatusFilter] = useState<string>(filterFromUrl);
+
+  const handleFilterChange = (filter: string) => {
+    handleFilterChange(filter);
+    router.replace(`/dashboard/payables?filter=${filter}`, { scroll: false });
+  };
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingPayable, setEditingPayable] = useState<PayableRequest | null>(null);
@@ -51,7 +59,7 @@ export default function PayablesPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [confirmingPayable, setConfirmingPayable] = useState<PayableRequest | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  
+
   // Form state
   const [form, setForm] = useState({
     vendor_id: '',
@@ -103,7 +111,7 @@ export default function PayablesPage() {
       const response = await fetch(`/api/customers?company_id=${company.id}`);
       const result = await response.json();
       if (result.data) {
-        setVendors(result.data.filter((c: Vendor) => 
+        setVendors(result.data.filter((c: Vendor) =>
           c.customer_type === 'vendor' || c.customer_type === 'both'
         ));
       }
@@ -120,7 +128,7 @@ export default function PayablesPage() {
         ...form,
         vendor_id: vendor.id,
         vendor_name: vendor.name,
-        vendor_type: vendor.vendor_type || 'company'
+        vendor_type: (vendor as any).vendor_type || 'company'
       });
     }
   };
@@ -166,7 +174,7 @@ export default function PayablesPage() {
       alert('請填寫必要欄位');
       return;
     }
-    
+
     setIsSaving(true);
     try {
       const url = '/api/payables';
@@ -211,7 +219,7 @@ export default function PayablesPage() {
   // 確認付款
   const handleConfirmPayment = async () => {
     if (!confirmingPayable) return;
-    
+
     setIsConfirming(true);
     try {
       const response = await fetch('/api/payables/pay', {
@@ -250,13 +258,13 @@ export default function PayablesPage() {
   // 刪除應付款項
   const handleDelete = async (id: string) => {
     if (!confirm('確定要刪除此應付款項？')) return;
-    
+
     try {
       const response = await fetch(`/api/payables?id=${id}`, {
         method: 'DELETE'
       });
       const result = await response.json();
-      
+
       if (result.success) {
         loadPayables();
       } else {
@@ -355,12 +363,11 @@ export default function PayablesPage() {
           {['all', 'pending', 'paid', 'overdue'].map(status => (
             <button
               key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                statusFilter === status
-                  ? 'bg-brand-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              onClick={() => handleFilterChange(status)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${statusFilter === status
+                ? 'bg-brand-primary-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
             >
               {status === 'all' ? '全部' : statusConfig[status as keyof typeof statusConfig].label}
             </button>
@@ -405,7 +412,7 @@ export default function PayablesPage() {
               payables.map(payable => {
                 const config = statusConfig[payable.status];
                 const isOverdue = new Date(payable.due_date) < new Date() && payable.status === 'pending';
-                
+
                 return (
                   <tr key={payable.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
@@ -512,7 +519,7 @@ export default function PayablesPage() {
                 <input
                   type="text"
                   value={form.vendor_name}
-                  onChange={(e) => setForm({...form, vendor_name: e.target.value})}
+                  onChange={(e) => setForm({ ...form, vendor_name: e.target.value })}
                   placeholder="或直接輸入廠商名稱"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 mt-2"
                 />
@@ -526,7 +533,7 @@ export default function PayablesPage() {
                     <input
                       type="radio"
                       checked={form.vendor_type === 'company'}
-                      onChange={() => setForm({...form, vendor_type: 'company'})}
+                      onChange={() => setForm({ ...form, vendor_type: 'company' })}
                       className="text-brand-primary-600"
                     />
                     <Building className="w-4 h-4" />
@@ -536,7 +543,7 @@ export default function PayablesPage() {
                     <input
                       type="radio"
                       checked={form.vendor_type === 'individual'}
-                      onChange={() => setForm({...form, vendor_type: 'individual'})}
+                      onChange={() => setForm({ ...form, vendor_type: 'individual' })}
                       className="text-brand-primary-600"
                     />
                     <User className="w-4 h-4" />
@@ -551,7 +558,7 @@ export default function PayablesPage() {
                 <input
                   type="text"
                   value={form.title}
-                  onChange={(e) => setForm({...form, title: e.target.value})}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="例：1月份 SEO 外包費用"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -563,7 +570,7 @@ export default function PayablesPage() {
                 <input
                   type="number"
                   value={form.amount}
-                  onChange={(e) => setForm({...form, amount: e.target.value})}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
                   placeholder="0"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -575,7 +582,7 @@ export default function PayablesPage() {
                 <input
                   type="date"
                   value={form.due_date}
-                  onChange={(e) => setForm({...form, due_date: e.target.value})}
+                  onChange={(e) => setForm({ ...form, due_date: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
@@ -587,7 +594,7 @@ export default function PayablesPage() {
                   <input
                     type="text"
                     value={form.invoice_number}
-                    onChange={(e) => setForm({...form, invoice_number: e.target.value})}
+                    onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
                     placeholder="選填"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
@@ -599,7 +606,7 @@ export default function PayablesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
                 <textarea
                   value={form.notes}
-                  onChange={(e) => setForm({...form, notes: e.target.value})}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   placeholder="選填"
                   rows={2}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
@@ -655,7 +662,7 @@ export default function PayablesPage() {
                 <input
                   type="number"
                   value={paymentForm.paid_amount}
-                  onChange={(e) => setPaymentForm({...paymentForm, paid_amount: e.target.value})}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paid_amount: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
@@ -665,7 +672,7 @@ export default function PayablesPage() {
                 <input
                   type="text"
                   value={paymentForm.payment_note}
-                  onChange={(e) => setPaymentForm({...paymentForm, payment_note: e.target.value})}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_note: e.target.value })}
                   placeholder="選填"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -676,7 +683,7 @@ export default function PayablesPage() {
                   <input
                     type="checkbox"
                     checked={paymentForm.send_notification}
-                    onChange={(e) => setPaymentForm({...paymentForm, send_notification: e.target.checked})}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, send_notification: e.target.checked })}
                     className="rounded text-brand-primary-600"
                   />
                   <span className="text-sm">通知廠商開立發票</span>
