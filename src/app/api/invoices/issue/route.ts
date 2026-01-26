@@ -5,18 +5,9 @@ import crypto from 'crypto';
 // 正式環境
 const EZPAY_URL = 'https://inv.ezpay.com.tw/Api/invoice_issue';
 
-function addPadding(data: string): string {
-  const blockSize = 32;
-  const len = Buffer.byteLength(data, 'utf8');
-  const pad = blockSize - (len % blockSize);
-  return data + String.fromCharCode(pad).repeat(pad);
-}
-
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  cipher.setAutoPadding(false);
-  const padded = addPadding(data);
-  let encrypted = cipher.update(padded, 'utf8', 'hex');
+  let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return encrypted;
 }
@@ -25,7 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { 
+    const {
       company_id,
       buyer_name,
       buyer_email,
@@ -114,9 +105,8 @@ export async function POST(request: NextRequest) {
     }
 
     const queryString = Object.entries(postData)
-      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .map(([k, v]) => `${k}=${v}`)
       .join('&');
-
     const encrypted = aesEncrypt(queryString, hash_key, hash_iv);
 
     const formData = new URLSearchParams();
