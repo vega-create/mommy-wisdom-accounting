@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   MessageCircle, Settings, Users, FileText, Send,
@@ -75,7 +76,15 @@ type TabType = 'settings' | 'groups' | 'templates' | 'send' | 'schedules' | 'his
 
 export default function LinePage() {
   const { company } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<TabType>('settings');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabFromUrl = searchParams.get('tab') as TabType;
+  const [activeTab, setActiveTab] = useState<TabType>(tabFromUrl || 'settings');
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    router.replace(`/dashboard/line?tab=${tab}`, { scroll: false });
+  };
 
   // Settings state
   const [settings, setSettings] = useState<LineSettings>({
@@ -787,7 +796,7 @@ export default function LinePage() {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                 ? 'border-brand-primary-600 text-brand-primary-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
