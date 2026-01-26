@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // 取得發票設定
     const { data: settings } = await supabase
-      .from('acct_invoice_settings')
+      .from('company_ezpay_settings')
       .select('*')
       .eq('company_id', company_id)
       .single();
