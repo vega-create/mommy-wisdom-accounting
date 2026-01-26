@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       buyer_name,
       buyer_email,
       buyer_tax_id,
-      category,
+      invoice_type: category,
       items,
       carrier_type,
       carrier_num,
@@ -140,12 +140,12 @@ export async function POST(request: NextRequest) {
         invoice_date: invoiceResult.CreateTime,
         buyer_name,
         buyer_tax_id,
-        amount: amt,
+        sales_amount: amt,
         tax_amount: taxAmt,
         total_amount: totalAmt,
         status: 'issued',
         ezpay_trans_num: transNum,
-        category,
+        invoice_type: category,
       });
 
       return NextResponse.json({
