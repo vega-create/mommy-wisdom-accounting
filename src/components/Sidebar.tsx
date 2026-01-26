@@ -57,8 +57,10 @@ const navigation = [
     children: [
       { name: '報價單', href: '/dashboard/quotations', icon: FileText },
       { name: '合約', href: '/dashboard/contracts', icon: FileSignature },
+      { name: '專案成本', href: '/dashboard/project-quotes', icon: BarChart3 },
     ],
   },
+  { name: '系統說明', href: '/dashboard/help', icon: BookOpen },
 ];
 
 export default function Sidebar() {
