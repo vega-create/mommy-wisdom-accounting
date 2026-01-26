@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       carrier_num,
       love_code,
       print_flag,
-      send_line_notification,
+      send_line,
     } = body;
 
     const { data: settings } = await supabase
@@ -174,9 +174,8 @@ export async function POST(request: NextRequest) {
 
       // 發送 LINE 通知
       let lineSent = false;
-      if (send_line_notification && customer_id) {
+      if (send_line && customer_id) {
         try {
-          // 取得客戶的 LINE 群組 ID
           const { data: customer } = await supabase
             .from('acct_customers')
             .select('line_group_id, line_group_name, line_notify_enabled')
@@ -184,7 +183,6 @@ export async function POST(request: NextRequest) {
             .single();
 
           if (customer?.line_group_id && customer?.line_notify_enabled) {
-            // 取得 LINE 設定
             const { data: lineSettings } = await supabase
               .from('acct_line_settings')
               .select('channel_access_token, is_active')
@@ -192,7 +190,6 @@ export async function POST(request: NextRequest) {
               .single();
 
             if (lineSettings?.channel_access_token && lineSettings?.is_active) {
-              // 組合訊息
               const message = `📄 電子發票通知\n\n` +
                 `發票號碼：${invoiceResult.InvoiceNumber}\n` +
                 `買受人：${buyer_name}\n` +
@@ -206,7 +203,6 @@ export async function POST(request: NextRequest) {
                 message
               );
 
-              // 更新發票的 LINE 發送狀態
               if (lineSent && invoice?.id) {
                 await supabase
                   .from('acct_invoices')
