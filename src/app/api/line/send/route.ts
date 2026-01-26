@@ -3,10 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 const LINE_API_URL = 'https://api.line.me/v2/bot/message';
 
-// 發送訊息到 LINE
 async function sendLineMessage(
   accessToken: string,
   targetType: 'push' | 'multicast',
@@ -38,7 +36,6 @@ async function sendLineMessage(
   return response;
 }
 
-// 替換模板變數
 function replaceVariables(content: string, variables: Record<string, string>) {
   let result = content;
   for (const [key, value] of Object.entries(variables)) {
@@ -47,18 +44,18 @@ function replaceVariables(content: string, variables: Record<string, string>) {
   return result;
 }
 
-// POST - 發送訊息
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { 
       company_id, 
-      recipient_type,  // 'group' | 'user' | 'multicast'
-      recipient_id,    // group_id 或 user_id
-      recipient_name,  // 顯示名稱
-      template_id,     // 使用模板
-      content,         // 自訂內容
-      variables,       // 模板變數
+      recipient_type,
+      recipient_id,
+      recipient_name,
+      template_id,
+      content,
+      variables,
       created_by 
     } = body;
 
@@ -66,7 +63,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
     }
 
-    // 取得 LINE 設定
     const { data: settings, error: settingsError } = await supabase
       .from('acct_line_settings')
       .select('*')
@@ -81,12 +77,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'LINE 通知功能已停用' }, { status: 400 });
     }
 
-    // 取得訊息內容
-    // 優先使用前端傳來的已替換內容
     let messageContent = content;
 
     if (template_id && !content) {
-      // 只有在沒有傳入 content 時才從模板取得
       const { data: template } = await supabase
         .from('acct_line_templates')
         .select('*')
@@ -95,8 +88,6 @@ export async function POST(request: NextRequest) {
 
       if (template) {
         messageContent = template.content;
-
-        // 替換變數
         if (variables && Object.keys(variables).length > 0) {
           messageContent = replaceVariables(messageContent, variables);
         }
@@ -107,7 +98,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少訊息內容' }, { status: 400 });
     }
 
-    // 如果有使用模板，更新使用次數
     if (template_id) {
       const { data: template } = await supabase
         .from('acct_line_templates')
@@ -123,7 +113,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 建立發送記錄
     const { data: message, error: messageError } = await supabase
       .from('acct_line_messages')
       .insert({
@@ -143,7 +132,6 @@ export async function POST(request: NextRequest) {
 
     if (messageError) throw messageError;
 
-    // 發送到 LINE
     try {
       await sendLineMessage(
         settings.channel_access_token,
@@ -152,29 +140,18 @@ export async function POST(request: NextRequest) {
         [{ type: 'text', text: messageContent }]
       );
 
-      // 更新狀態為已發送
       await supabase
         .from('acct_line_messages')
-        .update({ 
-          status: 'sent', 
-          sent_at: new Date().toISOString() 
-        })
+        .update({ status: 'sent', sent_at: new Date().toISOString() })
         .eq('id', message.id);
 
-      return NextResponse.json({ 
-        success: true, 
-        data: { ...message, status: 'sent' } 
-      });
+      return NextResponse.json({ success: true, data: { ...message, status: 'sent' } });
 
     } catch (lineError: unknown) {
-      // 更新狀態為失敗
       const errorMessage = lineError instanceof Error ? lineError.message : '發送失敗';
       await supabase
         .from('acct_line_messages')
-        .update({ 
-          status: 'failed', 
-          error_message: errorMessage
-        })
+        .update({ status: 'failed', error_message: errorMessage })
         .eq('id', message.id);
 
       return NextResponse.json({ 
@@ -190,9 +167,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - 取得發送記錄
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const limit = parseInt(searchParams.get('limit') || '50');
@@ -217,9 +194,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE - 刪除發送記錄
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
