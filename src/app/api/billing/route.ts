@@ -3,6 +3,17 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// 處理空字串為 null
+function cleanUuidFields(obj: any) {
+  const uuidFields = ['customer_id', 'payment_account_id', 'cost_vendor_id', 'created_by', 'paid_account_id', 'payment_method_id', 'transaction_id', 'invoice_id', 'service_category_id'];
+  for (const field of uuidFields) {
+    if (obj[field] === '' || obj[field] === undefined) {
+      obj[field] = null;
+    }
+  }
+  return obj;
+}
+
 // GET - 取得請款單列表
 export async function GET(request: NextRequest) {
   try {
@@ -49,7 +60,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { 
+    let { 
       company_id,
       customer_id,
       customer_name,
@@ -82,32 +93,36 @@ export async function POST(request: NextRequest) {
     const billing_number = numberData || `BIL${Date.now()}`;
     const total_amount = parseFloat(amount) + parseFloat(tax_amount || 0);
 
+    let insertData: any = {
+      company_id,
+      billing_number,
+      customer_id: customer_id || null,
+      customer_name,
+      customer_email: customer_email || null,
+      customer_line_id: customer_line_id || null,
+      customer_line_group_id: customer_line_group_id || null,
+      customer_line_group_name: customer_line_group_name || null,
+      title,
+      description: description || null,
+      billing_month: billing_month || null,
+      amount: parseFloat(amount),
+      tax_amount: parseFloat(tax_amount || 0),
+      total_amount,
+      cost_amount: cost_amount ? parseFloat(cost_amount) : null,
+      cost_vendor_id: cost_vendor_id || null,
+      cost_vendor_name: cost_vendor_name || null,
+      cost_description: cost_description || null,
+      payment_account_id: payment_account_id || null,
+      due_date,
+      status: 'draft',
+      created_by: created_by || null
+    };
+
+    insertData = cleanUuidFields(insertData);
+
     const { data, error } = await supabase
       .from('acct_billing_requests')
-      .insert({
-        company_id,
-        billing_number,
-        customer_id: customer_id || null,
-        customer_name,
-        customer_email: customer_email || null,
-        customer_line_id: customer_line_id || null,
-        customer_line_group_id: customer_line_group_id || null,
-        customer_line_group_name: customer_line_group_name || null,
-        title,
-        description: description || null,
-        billing_month: billing_month || null,
-        amount: parseFloat(amount),
-        tax_amount: parseFloat(tax_amount || 0),
-        total_amount,
-        cost_amount: cost_amount ? parseFloat(cost_amount) : null,
-        cost_vendor_id: cost_vendor_id || null,
-        cost_vendor_name: cost_vendor_name || null,
-        cost_description: cost_description || null,
-        payment_account_id: payment_account_id || null,
-        due_date,
-        status: 'draft',
-        created_by: created_by || null
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -129,11 +144,14 @@ export async function PUT(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { id, ...updates } = body;
+    let { id, ...updates } = body;
 
     if (!id) {
       return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     }
+
+    // 處理空字串 UUID
+    updates = cleanUuidFields(updates);
 
     // 重新計算總金額
     if (updates.amount !== undefined || updates.tax_amount !== undefined) {
@@ -151,7 +169,10 @@ export async function PUT(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Billing update error:', error);
+      return NextResponse.json({ error: `更新請款單失敗: ${error.message}` }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
