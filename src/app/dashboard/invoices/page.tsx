@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { FileText, Plus, Settings, X, Check } from 'lucide-react';
+import { FileText, Plus, Settings, X, Check, Eye, Ban, Trash2 } from 'lucide-react';
 
 interface Invoice {
   id: string;
@@ -58,6 +58,10 @@ export default function InvoicesPage() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showCustomItem, setShowCustomItem] = useState(false);
   const [showCustomBuyer, setShowCustomBuyer] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showVoidModal, setShowVoidModal] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
 
   const defaultProducts = [
     { id: '1', name: '顧問費' },
@@ -218,6 +222,39 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleVoidInvoice = async () => {
+    if (!selectedInvoice || !voidReason) return;
+    try {
+      const res = await fetch("/api/invoices/void", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: company?.id,
+          invoice_id: selectedInvoice.id,
+          invoice_number: selectedInvoice.invoice_number,
+          invalid_reason: voidReason,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInvoices(invoices.map(inv => inv.id === selectedInvoice.id ? { ...inv, status: "void" } : inv));
+        setShowVoidModal(false);
+        setVoidReason("");
+        alert("發票作廢成功");
+      } else {
+        alert("作廢失敗: " + data.message);
+      }
+    } catch (e) { alert("作廢失敗"); }
+  };
+
+  const handleDeleteInvoice = async (id: string) => {
+    if (!confirm("確定要刪除此發票記錄？")) return;
+    try {
+      await supabase.from("acct_invoices").delete().eq("id", id);
+      setInvoices(invoices.filter(inv => inv.id !== id));
+    } catch (e) { alert("刪除失敗"); }
+  };
+
   const statusLabels: Record<string, { label: string; color: string }> = {
     issued: { label: '已開立', color: 'bg-green-100 text-green-700' },
     voided: { label: '已作廢', color: 'bg-red-100 text-red-700' },
@@ -279,6 +316,7 @@ export default function InvoicesPage() {
                 <th className="text-center p-4">類型</th>
                 <th className="text-center p-4">狀態</th>
                 <th className="text-center p-4">開立日期</th>
+                <th className="text-center p-4">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -296,6 +334,15 @@ export default function InvoicesPage() {
                   </td>
                   <td className="p-4 text-center text-gray-500">
                     {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : '-'}
+                  </td>
+                  <td className="p-4 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => { setSelectedInvoice(inv); setShowViewModal(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="查看"><Eye className="w-4 h-4" /></button>
+                      {inv.status !== "void" && inv.status !== "voided" && (
+                        <button onClick={() => { setSelectedInvoice(inv); setShowVoidModal(true); }} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded" title="作廢"><Ban className="w-4 h-4" /></button>
+                      )}
+                      <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="刪除"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -445,6 +492,58 @@ export default function InvoicesPage() {
                   {issuing ? '開立中...' : <><Check className="w-4 h-4" />開立發票</>}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+
+      {/* 查看發票 Modal */}
+      {showViewModal && selectedInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowViewModal(false)}>
+          <div className="bg-white rounded-xl max-w-lg w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">發票詳情</h2>
+              <button onClick={() => setShowViewModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div><span className="text-gray-500 text-sm">發票號碼</span><p className="font-mono font-medium">{selectedInvoice.invoice_number}</p></div>
+                <div><span className="text-gray-500 text-sm">開立日期</span><p>{selectedInvoice.invoice_date ? new Date(selectedInvoice.invoice_date).toLocaleDateString() : "-"}</p></div>
+                <div><span className="text-gray-500 text-sm">買受人</span><p>{selectedInvoice.buyer_name}</p></div>
+                <div><span className="text-gray-500 text-sm">統編</span><p>{selectedInvoice.buyer_tax_id || "-"}</p></div>
+                <div><span className="text-gray-500 text-sm">金額</span><p className="font-medium">${selectedInvoice.total_amount?.toLocaleString()}</p></div>
+                <div><span className="text-gray-500 text-sm">狀態</span><p>{selectedInvoice.status}</p></div>
+              </div>
+            </div>
+            <div className="p-4 border-t">
+              <button onClick={() => setShowViewModal(false)} className="w-full px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">關閉</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 作廢發票 Modal */}
+      {showVoidModal && selectedInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowVoidModal(false)}>
+          <div className="bg-white rounded-xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold text-orange-600">作廢發票</h2>
+              <button onClick={() => setShowVoidModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="p-3 bg-orange-50 rounded-lg">
+                <p className="text-sm text-orange-800">確定要作廢發票 <span className="font-mono font-bold">{selectedInvoice.invoice_number}</span>？</p>
+                <p className="text-xs text-orange-600 mt-1">作廢後無法復原，請謹慎操作</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">作廢原因 *</label>
+                <input type="text" value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="請輸入作廢原因（限6字）" maxLength={6} className="w-full border rounded-lg px-4 py-2" />
+              </div>
+            </div>
+            <div className="p-4 border-t flex gap-3">
+              <button onClick={() => setShowVoidModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+              <button onClick={handleVoidInvoice} disabled={!voidReason} className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">確認作廢</button>
             </div>
           </div>
         </div>
