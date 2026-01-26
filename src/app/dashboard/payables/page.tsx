@@ -47,7 +47,7 @@ export default function PayablesPage() {
   const [statusFilter, setStatusFilter] = useState<string>(filterFromUrl);
 
   const handleFilterChange = (filter: string) => {
-    handleFilterChange(filter);
+    setStatusFilter(filter);
     router.replace(`/dashboard/payables?filter=${filter}`, { scroll: false });
   };
   // Modal states
