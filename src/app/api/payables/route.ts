@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-
 // GET - 取得應付款項列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const status = searchParams.get('status');
@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
 // POST - 新增應付款項
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { 
       company_id,
@@ -111,6 +112,7 @@ export async function POST(request: NextRequest) {
 // PUT - 更新應付款項
 export async function PUT(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { id, ...updateData } = body;
 
@@ -143,6 +145,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - 刪除應付款項
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
