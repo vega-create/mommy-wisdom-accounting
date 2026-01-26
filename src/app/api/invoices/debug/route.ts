@@ -27,27 +27,33 @@ export async function GET() {
     return NextResponse.json({ error: 'No settings found' });
   }
 
-  const { merchant_id, hash_key, hash_iv } = settings;
+  // 檢查是否有隱藏字符
+  const rawKey = settings.hash_key;
+  const rawIV = settings.hash_iv;
+  const trimmedKey = rawKey.trim();
+  const trimmedIV = rawIV.trim();
+  
   const testData = 'RespondType=JSON&Version=1.5&TimeStamp=' + Math.floor(Date.now()/1000);
-  const encrypted = aesEncrypt(testData, hash_key, hash_iv);
+  
+  // 用 trim 過的金鑰測試
+  const encrypted = aesEncrypt(testData, trimmedKey, trimmedIV);
 
-  // 測試環境
-  const testRes = await fetch('https://cinv.ezpay.com.tw/Api/invoice_issue', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ MerchantID_: merchant_id, PostData_: encrypted }),
-  }).then(r => r.json());
-
-  // 正式環境
   const prodRes = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ MerchantID_: merchant_id, PostData_: encrypted }),
+    body: new URLSearchParams({ MerchantID_: settings.merchant_id, PostData_: encrypted }),
   }).then(r => r.json());
 
   return NextResponse.json({
-    merchant_id,
-    test_env: { url: 'cinv.ezpay.com.tw', status: testRes.Status, message: testRes.Message },
-    prod_env: { url: 'inv.ezpay.com.tw', status: prodRes.Status, message: prodRes.Message },
+    merchant_id: settings.merchant_id,
+    raw_key_length: rawKey.length,
+    trimmed_key_length: trimmedKey.length,
+    raw_iv_length: rawIV.length,
+    trimmed_iv_length: trimmedIV.length,
+    key_has_whitespace: rawKey !== trimmedKey,
+    iv_has_whitespace: rawIV !== trimmedIV,
+    key_hex: Buffer.from(trimmedKey).toString('hex'),
+    iv_hex: Buffer.from(trimmedIV).toString('hex'),
+    result: { status: prodRes.Status, message: prodRes.Message },
   });
 }
