@@ -99,7 +99,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       billing_number,
       customer_id: contract.customer_id || null,
       customer_name: contract.customer_name,
-      customer_tax_id: contract.customer_tax_id || null,
+      
       customer_email: contract.customer_email || null,
       title: `${contract.title}`,
       description: `合約 ${contract.contract_number} 簽署完成`,
