@@ -136,7 +136,9 @@ export default function CustomersPage() {
     try {
       const response = await fetch(`/api/line/groups?company_id=${company.id}`);
       const result = await response.json();
-      if (result.data) {
+      if (Array.isArray(result)) {
+        setLineGroups(result);
+      } else if (result.data) {
         setLineGroups(result.data);
       }
     } catch (error) {
@@ -406,8 +408,8 @@ export default function CustomersPage() {
                 key={type}
                 onClick={() => setFilterType(type)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterType === type
-                    ? 'bg-brand-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-brand-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
               >
                 {type === 'all' ? '全部' : type === 'customer' ? '客戶' : '廠商'}
@@ -563,8 +565,8 @@ export default function CustomersPage() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
-                      ? 'border-brand-primary-600 text-brand-primary-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                    ? 'border-brand-primary-600 text-brand-primary-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
                     }`}
                 >
                   <tab.icon className="w-4 h-4" />
@@ -587,8 +589,8 @@ export default function CustomersPage() {
                           type="button"
                           onClick={() => setFormData({ ...formData, customer_type: type })}
                           className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.customer_type === type
-                              ? 'bg-brand-primary-600 text-white'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            ? 'bg-brand-primary-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
                         >
                           {customerTypeLabels[type].label}
@@ -609,8 +611,8 @@ export default function CustomersPage() {
                               type="button"
                               onClick={() => setFormData({ ...formData, vendor_type: type, is_internal: false })}
                               className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.vendor_type === type && !formData.is_internal
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                             >
                               外部{vendorTypeLabels[type]}
@@ -620,8 +622,8 @@ export default function CustomersPage() {
                             type="button"
                             onClick={() => setFormData({ ...formData, vendor_type: 'individual', is_internal: true })}
                             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.is_internal
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                               }`}
                           >
                             內部人員
