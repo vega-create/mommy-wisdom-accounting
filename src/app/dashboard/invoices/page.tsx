@@ -104,7 +104,8 @@ export default function InvoicesPage() {
     if (!company?.id) return;
     setSaving(true);
     setMessage({ type: '', text: '' });
-    const { error } = await supabase.from('acct_invoice_settings').upsert({ company_id: company.id, ...settingsForm }, { onConflict: 'company_id' });
+    const { error } = await supabase.from('acct_invoice_settings').upsert({ company_id: company.id,
+        customer_id: issueForm.customer_id, ...settingsForm }, { onConflict: 'company_id' });
     setSaving(false);
     if (error) {
       setMessage({ type: 'error', text: '儲存失敗：' + error.message });
@@ -172,6 +173,7 @@ export default function InvoicesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         company_id: company.id,
+        customer_id: issueForm.customer_id,
         buyer_name: issueForm.buyer_name,
         buyer_email: issueForm.buyer_email,
         buyer_tax_id: issueForm.buyer_tax_id,
@@ -197,6 +199,7 @@ export default function InvoicesPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             company_id: company.id,
+        customer_id: issueForm.customer_id,
             message: `📄 發票開立通知\n\n發票號碼：${invoiceNumber}\n買受人：${issueForm.buyer_name}\n金額：$${parseInt(issueForm.total_price).toLocaleString()}\n品項：${issueForm.item_name}\n\n發票已開立完成！`,
           }),
         });
