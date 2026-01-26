@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       company_id,
-      customer_id: customer_id || null,
+      customer_id,
       customer_name,
       customer_email,
       customer_line_id,
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
       cost_vendor_id,
       cost_vendor_name,
       cost_description,
-      payment_account_id: payment_account_id || null,
+      payment_account_id,
       due_date,
-      created_by: created_by || null
+      created_by
     } = body;
 
     if (!company_id || !customer_name || !amount || !due_date || !title) {
@@ -89,20 +89,20 @@ export async function POST(request: NextRequest) {
         billing_number,
         customer_id: customer_id || null,
         customer_name,
-        customer_email,
-        customer_line_id,
-        customer_line_group_id,
-        customer_line_group_name,
+        customer_email: customer_email || null,
+        customer_line_id: customer_line_id || null,
+        customer_line_group_id: customer_line_group_id || null,
+        customer_line_group_name: customer_line_group_name || null,
         title,
-        description,
-        billing_month,
+        description: description || null,
+        billing_month: billing_month || null,
         amount: parseFloat(amount),
         tax_amount: parseFloat(tax_amount || 0),
         total_amount,
         cost_amount: cost_amount ? parseFloat(cost_amount) : null,
         cost_vendor_id: cost_vendor_id || null,
         cost_vendor_name: cost_vendor_name || null,
-        cost_description,
+        cost_description: cost_description || null,
         payment_account_id: payment_account_id || null,
         due_date,
         status: 'draft',
