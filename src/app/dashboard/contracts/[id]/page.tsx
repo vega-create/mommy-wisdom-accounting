@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/lib/supabase';
 
 interface Item { item_name: string; description: string; quantity: number; unit: string; unit_price: number; amount: number; }
+interface Customer { id: string; name: string; tax_id: string; email: string; phone: string; contact_person: string; line_group_id: string; line_group_name: string; }
 
 export default function ContractEditPage() {
   const params = useParams();
@@ -12,21 +14,71 @@ export default function ContractEditPage() {
   const { company } = useAuthStore();
   const isNew = params.id === 'new';
 
-  const [form, setForm] = useState({ customer_name: '', customer_tax_id: '', customer_email: '', customer_phone: '', contact_person: '', title: '', description: '', payment_terms: '', terms_and_conditions: '', notes: '', tax_type: 'taxable', start_date: '', end_date: '' });
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [form, setForm] = useState({ customer_id: '', customer_name: '', customer_tax_id: '', customer_email: '', customer_phone: '', contact_person: '', title: '', description: '', payment_terms: '', terms_and_conditions: '', notes: '', tax_type: 'taxable', start_date: '', end_date: '' });
   const [items, setItems] = useState<Item[]>([{ item_name: '', description: '', quantity: 1, unit: '式', unit_price: 0, amount: 0 }]);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [signatureInfo, setSignatureInfo] = useState<any>(null);
+  const [showCustomCustomer, setShowCustomCustomer] = useState(false);
 
-  useEffect(() => { if (!isNew) fetchContract(); }, [params.id]);
+  useEffect(() => { 
+    fetchCustomers();
+    if (!isNew) fetchContract(); 
+  }, [params.id, company?.id]);
+
+  const fetchCustomers = async () => {
+    if (!company?.id) return;
+    const { data } = await supabase.from('acct_customers').select('*').eq('company_id', company.id).order('name');
+    setCustomers(data || []);
+  };
 
   const fetchContract = async () => {
     const res = await fetch(`/api/contracts/${params.id}`);
     const data = await res.json();
-    setForm({ customer_name: data.customer_name || '', customer_tax_id: data.customer_tax_id || '', customer_email: data.customer_email || '', customer_phone: data.customer_phone || '', contact_person: data.contact_person || '', title: data.title || '', description: data.description || '', payment_terms: data.payment_terms || '', terms_and_conditions: data.terms_and_conditions || '', notes: data.notes || '', tax_type: data.tax_type || 'taxable', start_date: data.start_date || '', end_date: data.end_date || '' });
+    setForm({ 
+      customer_id: data.customer_id || '', 
+      customer_name: data.customer_name || '', 
+      customer_tax_id: data.customer_tax_id || '', 
+      customer_email: data.customer_email || '', 
+      customer_phone: data.customer_phone || '', 
+      contact_person: data.contact_person || '', 
+      title: data.title || '', 
+      description: data.description || '', 
+      payment_terms: data.payment_terms || '', 
+      terms_and_conditions: data.terms_and_conditions || '', 
+      notes: data.notes || '', 
+      tax_type: data.tax_type || 'taxable', 
+      start_date: data.start_date || '', 
+      end_date: data.end_date || '' 
+    });
     if (data.items?.length > 0) setItems(data.items);
     if (data.customer_signed_at) setSignatureInfo({ signed_at: data.customer_signed_at, signed_name: data.customer_signed_name, signature: data.customer_signature });
     setLoading(false);
+  };
+
+  const handleCustomerChange = (customerId: string) => {
+    if (customerId === 'custom') {
+      setShowCustomCustomer(true);
+      setForm({ ...form, customer_id: '', customer_name: '', customer_tax_id: '', customer_email: '', customer_phone: '', contact_person: '' });
+    } else if (customerId) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        setShowCustomCustomer(false);
+        setForm({
+          ...form,
+          customer_id: customer.id,
+          customer_name: customer.name,
+          customer_tax_id: customer.tax_id || '',
+          customer_email: customer.email || '',
+          customer_phone: customer.phone || '',
+          contact_person: customer.contact_person || '',
+        });
+      }
+    } else {
+      setShowCustomCustomer(false);
+      setForm({ ...form, customer_id: '', customer_name: '', customer_tax_id: '', customer_email: '', customer_phone: '', contact_person: '' });
+    }
   };
 
   const updateItem = (index: number, field: string, value: any) => {
@@ -55,6 +107,8 @@ export default function ContractEditPage() {
 
   if (loading) return <div className="p-6">載入中...</div>;
 
+  const selectedCustomer = customers.find(c => c.id === form.customer_id);
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">{isNew ? '新增合約' : '編輯合約'}</h1>
@@ -68,12 +122,66 @@ export default function ContractEditPage() {
       )}
       <div className="bg-white rounded-xl shadow p-6 mb-6">
         <h2 className="font-semibold mb-4">客戶資訊</h2>
+        
+        {/* 客戶下拉選單 */}
+        <div className="mb-4">
+          <label className="block text-sm text-gray-500 mb-1">選擇客戶</label>
+          <select 
+            value={showCustomCustomer ? 'custom' : form.customer_id} 
+            onChange={(e) => handleCustomerChange(e.target.value)}
+            className="w-full border rounded-lg px-4 py-2"
+          >
+            <option value="">-- 選擇客戶 --</option>
+            {customers.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} {c.tax_id ? `(${c.tax_id})` : ''} {c.line_group_name ? `📱${c.line_group_name}` : ''}
+              </option>
+            ))}
+            <option value="custom">✏️ 自行輸入...</option>
+          </select>
+        </div>
+
+        {/* 顯示已選客戶的 LINE 群組 */}
+        {selectedCustomer?.line_group_name && (
+          <div className="mb-4 p-3 bg-green-50 rounded-lg text-sm text-green-700">
+            📱 LINE 群組：{selectedCustomer.line_group_name}（產生連結時會自動發送通知）
+          </div>
+        )}
+
+        {/* 客戶詳細資訊 */}
         <div className="grid grid-cols-2 gap-4">
-          <input placeholder="客戶名稱 *" value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} className="border rounded-lg px-4 py-2" />
-          <input placeholder="統一編號" value={form.customer_tax_id} onChange={(e) => setForm({ ...form, customer_tax_id: e.target.value })} className="border rounded-lg px-4 py-2" />
-          <input placeholder="聯絡人" value={form.contact_person} onChange={(e) => setForm({ ...form, contact_person: e.target.value })} className="border rounded-lg px-4 py-2" />
-          <input placeholder="電話" value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} className="border rounded-lg px-4 py-2" />
-          <input placeholder="Email" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} className="border rounded-lg px-4 py-2 col-span-2" />
+          <input 
+            placeholder="客戶名稱 *" 
+            value={form.customer_name} 
+            onChange={(e) => setForm({ ...form, customer_name: e.target.value })} 
+            className="border rounded-lg px-4 py-2"
+            disabled={!showCustomCustomer && !!form.customer_id}
+          />
+          <input 
+            placeholder="統一編號" 
+            value={form.customer_tax_id} 
+            onChange={(e) => setForm({ ...form, customer_tax_id: e.target.value })} 
+            className="border rounded-lg px-4 py-2"
+            disabled={!showCustomCustomer && !!form.customer_id}
+          />
+          <input 
+            placeholder="聯絡人" 
+            value={form.contact_person} 
+            onChange={(e) => setForm({ ...form, contact_person: e.target.value })} 
+            className="border rounded-lg px-4 py-2"
+          />
+          <input 
+            placeholder="電話" 
+            value={form.customer_phone} 
+            onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} 
+            className="border rounded-lg px-4 py-2"
+          />
+          <input 
+            placeholder="Email" 
+            value={form.customer_email} 
+            onChange={(e) => setForm({ ...form, customer_email: e.target.value })} 
+            className="border rounded-lg px-4 py-2 col-span-2"
+          />
         </div>
       </div>
       <div className="bg-white rounded-xl shadow p-6 mb-6">
