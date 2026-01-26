@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const companyId = searchParams.get('company') || '00000000-0000-0000-0000-000000000001';
+  
   const supabase = await createClient();
   
   const { data: settings } = await supabase
     .from('company_ezpay_settings')
     .select('*')
-    .eq('company_id', '00000000-0000-0000-0000-000000000001')
+    .eq('company_id', companyId)
     .single();
 
   if (!settings) {
@@ -17,25 +20,9 @@ export async function GET() {
 
   const { merchant_id, hash_key, hash_iv } = settings;
   
-  // 顯示實際讀到的金鑰
-  const keyInfo = {
-    full: hash_key,
-    len: hash_key.length,
-    first6: hash_key.substring(0, 6),
-    last6: hash_key.substring(hash_key.length - 6),
-    hex: Buffer.from(hash_key).toString('hex')
-  };
-  
-  const ivInfo = {
-    full: hash_iv,
-    len: hash_iv.length,
-    hex: Buffer.from(hash_iv).toString('hex')
-  };
-
   const timestamp = Math.floor(Date.now() / 1000);
-  const testData = `RespondType=JSON&Version=1.5&TimeStamp=${timestamp}`;
+  const testData = `RespondType=JSON&Version=1.5&TimeStamp=${timestamp}&MerchantOrderNo=TEST${timestamp}&Status=1&Category=B2C&BuyerName=Test&TaxType=1&TaxRate=5&Amt=100&TaxAmt=5&TotalAmt=105&ItemName=Test&ItemCount=1&ItemUnit=式&ItemPrice=100&ItemAmt=100`;
   
-  // 標準加密
   function encrypt(data: string, key: string, iv: string): string {
     const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     return cipher.update(data, 'utf8', 'hex') + cipher.final('hex');
@@ -50,10 +37,10 @@ export async function GET() {
   }).then(r => r.json());
 
   return NextResponse.json({
+    company_id: companyId,
     merchant_id,
-    keyInfo,
-    ivInfo,
-    testData,
+    key_len: hash_key.length,
+    iv_len: hash_iv.length,
     result: res
   });
 }
