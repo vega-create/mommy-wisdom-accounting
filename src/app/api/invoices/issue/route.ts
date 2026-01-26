@@ -126,9 +126,13 @@ export async function POST(request: NextRequest) {
 
     // 儲存發票記錄
     if (result.Status === 'SUCCESS') {
-      // 解密回傳資料
-      const decryptedResult = aesDecrypt(result.Result, hash_key, hash_iv);
-      const invoiceResult = JSON.parse(decryptedResult);
+      let invoiceResult;
+      try {
+        const decryptedResult = aesDecrypt(result.Result, hash_key, hash_iv);
+        invoiceResult = JSON.parse(decryptedResult);
+      } catch (e) {
+        invoiceResult = typeof result.Result === "string" ? JSON.parse(result.Result) : result.Result;
+      }
       
       // 儲存到資料庫
       const { error: insertError } = await supabase.from('acct_invoices').insert({
