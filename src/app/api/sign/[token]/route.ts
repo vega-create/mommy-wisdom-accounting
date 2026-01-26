@@ -51,10 +51,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
-  // 先取得合約資料
+  // 先取得合約資料，包含客戶資訊
   const { data: contract } = await supabase
     .from('acct_contracts')
-    .select('*')
+    .select('*, customer:acct_customers(id, name, email, line_group_id, line_group_name)')
     .eq('signature_token', token)
     .gt('signature_token_expires_at', new Date().toISOString())
     .single();
@@ -94,13 +94,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     
     const billing_number = numberData || `BIL${Date.now()}`;
 
+    // 從客戶資料取得 LINE 群組資訊
+    const customer = contract.customer;
+
     const billingData = {
       company_id: contract.company_id,
       billing_number,
       customer_id: contract.customer_id || null,
       customer_name: contract.customer_name,
-      
-      customer_email: contract.customer_email || null,
+      customer_email: contract.customer_email || customer?.email || null,
+      customer_line_group_id: customer?.line_group_id || null,
+      customer_line_group_name: customer?.line_group_name || null,
       title: `${contract.title}`,
       description: `合約 ${contract.contract_number} 簽署完成`,
       amount: contract.subtotal,
@@ -126,7 +130,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     console.error('建立請款單異常:', e);
   }
 
-  // 發送 LINE 通知給管理群組（不是客戶）
+  // 發送 LINE 通知給管理群組
   try {
     const { data: lineSettings } = await supabase
       .from('acct_line_settings')
