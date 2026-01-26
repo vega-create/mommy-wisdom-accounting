@@ -118,7 +118,7 @@ export default function NewLaborReportPage() {
       .then(json => {
         if (json.data) setBillingRequests(json.data);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // 載入 LINE 群組
     fetch(`/api/line/groups?company_id=${company.id}`)
@@ -126,7 +126,7 @@ export default function NewLaborReportPage() {
       .then(json => {
         if (json.data) setLineGroups(json.data.filter((g: LineGroup) => g.is_active));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [company?.id]);
 
   // 選擇人員時自動帶入資料
@@ -142,7 +142,7 @@ export default function NewLaborReportPage() {
 
     const freelancer = freelancers.find(f => f.id === freelancerId);
     console.log('Selected freelancer:', freelancer);
-    
+
     if (freelancer) {
       setFormData(prev => ({
         ...prev,
@@ -160,7 +160,7 @@ export default function NewLaborReportPage() {
   useEffect(() => {
     const gross = formData.gross_amount || 0;
     const incomeType = incomeTypes.find(t => t.code === formData.income_type_code);
-    
+
     let withholding = 0;
     let nhi = 0;
 
@@ -317,11 +317,10 @@ ${url}
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, staff_type: 'external' }))}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    formData.staff_type === 'external'
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${formData.staff_type === 'external'
                       ? 'border-brand-primary-500 bg-brand-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <div className="font-medium text-gray-900">外部人員</div>
                   <div className="text-sm text-gray-500 mt-1">計入專案成本，可關聯請款單</div>
@@ -329,11 +328,10 @@ ${url}
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, staff_type: 'internal' }))}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    formData.staff_type === 'internal'
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${formData.staff_type === 'internal'
                       ? 'border-brand-primary-500 bg-brand-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <div className="font-medium text-gray-900">內部人員</div>
                   <div className="text-sm text-gray-500 mt-1">不計入專案成本</div>
@@ -428,11 +426,10 @@ ${url}
                       key={type.code}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, income_type_code: type.code }))}
-                      className={`p-3 rounded-lg border text-left transition-all ${
-                        formData.income_type_code === type.code
+                      className={`p-3 rounded-lg border text-left transition-all ${formData.income_type_code === type.code
                           ? 'border-brand-primary-500 bg-brand-primary-50'
                           : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                        }`}
                     >
                       <div className="font-medium text-sm">{type.code} - {type.name}</div>
                       <div className="text-xs text-gray-500">{type.description}</div>
