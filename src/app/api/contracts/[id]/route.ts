@@ -16,7 +16,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { items, ...contractData } = body;
 
   // 處理空字串日期欄位，轉為 null
-  const dateFields = ['contract_date', 'start_date', 'end_date', 'signed_at', 'valid_until'];
+  const dateFields = ['contract_date', 'start_date', 'end_date', 'customer_signed_at', 'company_signed_at', 'signature_token_expires_at', 'last_reminded_at', 'line_notified_at'];
   dateFields.forEach(field => {
     if (contractData[field] === '' || contractData[field] === undefined) {
       contractData[field] = null;
