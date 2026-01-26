@@ -12,6 +12,13 @@ function aesEncrypt(data: string, key: string, iv: string): string {
   return encrypted;
 }
 
+function aesDecrypt(data: string, key: string, iv: string): string {
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(data, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -123,7 +130,10 @@ export async function POST(request: NextRequest) {
 
     // 儲存發票記錄
     if (result.Status === 'SUCCESS') {
-      const invoiceResult = JSON.parse(result.Result);
+      // 解密回傳資料
+      const decryptedResult = aesDecrypt(result.Result, hash_key, hash_iv);
+      const invoiceResult = JSON.parse(decryptedResult);
+
       await supabase.from('acct_invoices').insert({
         company_id,
         invoice_number: invoiceResult.InvoiceNumber,
@@ -137,13 +147,20 @@ export async function POST(request: NextRequest) {
         ezpay_trans_num: transNum,
         category,
       });
+
+      return NextResponse.json({
+        success: true,
+        status: result.Status,
+        message: result.Message,
+        result: invoiceResult,
+      });
     }
 
     return NextResponse.json({
-      success: result.Status === 'SUCCESS',
+      success: false,
       status: result.Status,
       message: result.Message,
-      result: result.Status === 'SUCCESS' ? JSON.parse(result.Result) : null,
+      result: null,
     });
 
   } catch (error: any) {
