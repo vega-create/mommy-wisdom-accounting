@@ -2,26 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
-function addPadding(data: string): string {
-  const blockSize = 32;
-  const len = Buffer.byteLength(data, 'utf8');
-  const pad = blockSize - (len % blockSize);
-  return data + String.fromCharCode(pad).repeat(pad);
-}
-
 function aesEncrypt(data: string, key: string, iv: string): string {
+  const blockSize = 32;
+  const dataBuffer = Buffer.from(data, 'utf8');
+  const len = dataBuffer.length;
+  const pad = blockSize - (len % blockSize);
+  const padding = Buffer.alloc(pad, pad);  // 正確的 PKCS7 填充
+  const paddedBuffer = Buffer.concat([dataBuffer, padding]);
+  
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
   cipher.setAutoPadding(false);
-  const padded = addPadding(data);
-  let encrypted = cipher.update(padded, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return encrypted;
+  const encrypted = Buffer.concat([cipher.update(paddedBuffer), cipher.final()]);
+  return encrypted.toString('hex');
 }
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   
-  // 取得智慧媽咪的設定
   const { data: settings } = await supabase
     .from('company_ezpay_settings')
     .select('*')
@@ -34,11 +31,9 @@ export async function GET(request: NextRequest) {
 
   const { merchant_id, hash_key, hash_iv } = settings;
   
-  // 測試資料
   const testData = 'RespondType=JSON&Version=1.5&TimeStamp=' + Math.floor(Date.now()/1000);
   const encrypted = aesEncrypt(testData, hash_key, hash_iv);
   
-  // 呼叫 ezPay
   const formData = new URLSearchParams({
     MerchantID_: merchant_id,
     PostData_: encrypted,
@@ -54,10 +49,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     merchant_id,
-    hash_key_length: hash_key.length,
-    hash_iv_length: hash_iv.length,
-    test_data: testData,
-    encrypted_preview: encrypted.substring(0, 50),
-    ezpay_response: result
+    keyLen: hash_key.length,
+    ivLen: hash_iv.length,
+    result
   });
 }
