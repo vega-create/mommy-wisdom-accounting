@@ -38,6 +38,17 @@ export default function QuotationsPage() {
     setLoading(false);
   };
 
+  const handleSendLink = async (id: string) => {
+    const res = await fetch(`/api/quotations/${id}/send-link`, { method: "POST" });
+    const data = await res.json();
+    if (data.view_url) {
+      navigator.clipboard.writeText(data.view_url);
+      alert("報價單連結已複製到剪貼簿！\n\n" + data.view_url);
+      fetchQuotations();
+    } else {
+      alert(data.error || "產生連結失敗");
+    }
+  };
   const handleDelete = async (id: string) => {
     if (!confirm('確定刪除此報價單？')) return;
     await fetch(`/api/quotations/${id}`, { method: 'DELETE' });
@@ -101,6 +112,9 @@ export default function QuotationsPage() {
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-2">
                       <Link href={`/dashboard/quotations/${q.id}`} className="text-blue-600 hover:underline text-sm">編輯</Link>
+                      {q.status === "draft" && (
+                        <button onClick={() => handleSendLink(q.id)} className="text-green-600 hover:underline text-sm">發送連結</button>
+                      )}
                       {q.status !== 'converted' && (
                         <button onClick={() => handleConvert(q.id)} className="text-purple-600 hover:underline text-sm">轉合約</button>
                       )}
