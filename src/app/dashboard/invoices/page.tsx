@@ -1,761 +1,189 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
-import { useSearchParams } from 'next/navigation';
-import {
-  FileText,
-  Plus,
-  Search,
-  Filter,
-  Settings,
-  Send,
-  Ban,
-  Trash2,
-  RefreshCw,
-  Building2,
-  User,
-  Receipt,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
-  X,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  ExternalLink,
-  Package,
-} from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { FileText, Plus, Settings, X, Check } from 'lucide-react';
 
-// ============================================
-// 品項選擇器元件
-// ============================================
-function ProductSelector({
-  companyId,
-  value,
-  unit,
-  price,
-  onSelect,
-}: {
-  companyId: string;
-  value: string;
-  unit: string;
-  price: number;
-  onSelect: (product: { name: string; unit: string; price: number }) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState(value);
-  const [products, setProducts] = useState<any[]>([]);
-  const [showSaveHint, setShowSaveHint] = useState(false);
-
-  useEffect(() => {
-    if (companyId) loadProducts();
-  }, [companyId]);
-
-  useEffect(() => {
-    setSearch(value);
-  }, [value]);
-
-  const loadProducts = async () => {
-    try {
-      const response = await fetch(`/api/invoice-products?company_id=${companyId}`);
-      const result = await response.json();
-      if (result.success) setProducts(result.data || []);
-    } catch (error) {
-      console.error('Load products error:', error);
-    }
-  };
-
-  const filteredProducts = products.filter((p: any) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const isNewProduct = search.trim() && !products.some((p: any) => p.name === search.trim());
-
-  const handleSelect = (product: any) => {
-    setSearch(product.name);
-    onSelect({
-      name: product.name,
-      unit: product.unit,
-      price: product.default_price || 0,
-    });
-    setIsOpen(false);
-
-    // 更新使用次數
-    fetch('/api/invoice-products', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: product.id }),
-    });
-  };
-
-  const handleSaveNew = async () => {
-    if (!search.trim()) return;
-    try {
-      await fetch('/api/invoice-products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_id: companyId,
-          name: search.trim(),
-          unit: unit,
-          default_price: price || null,
-        }),
-      });
-      setShowSaveHint(true);
-      setTimeout(() => setShowSaveHint(false), 2000);
-      loadProducts();
-    } catch (error) {
-      console.error('Save product error:', error);
-    }
-  };
-
-  return (
-    <div className="relative flex-1">
-      <div className="relative">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            onSelect({ name: e.target.value, unit, price });
-            if (!isOpen) setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-          placeholder="輸入或選擇品項"
-          className="input-field w-full"
-        />
-        {products.length > 0 && (
-          <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        )}
-      </div>
-
-      {showSaveHint && (
-        <div className="absolute right-0 top-full mt-1 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-lg z-50">
-          ✓ 已儲存
-        </div>
-      )}
-
-      {isOpen && (filteredProducts.length > 0 || isNewProduct) && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
-          {filteredProducts.length > 0 && (
-            <div className="py-1">
-              <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 font-medium">常用品項</div>
-              {filteredProducts.map((product: any) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onMouseDown={() => handleSelect(product)}
-                  className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center justify-between text-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <Package className="w-3 h-3 text-gray-400" />
-                    <span>{product.name}</span>
-                    <span className="text-xs text-gray-400">({product.unit})</span>
-                  </div>
-                  {product.default_price && (
-                    <span className="text-xs text-gray-500">${product.default_price.toLocaleString()}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          {isNewProduct && (
-            <div className="border-t">
-              <button
-                type="button"
-                onMouseDown={handleSaveNew}
-                className="w-full px-3 py-2 text-left hover:bg-blue-50 text-blue-600 text-sm flex items-center gap-2"
-              >
-                <Plus className="w-3 h-3" />
-                儲存「{search}」為常用品項
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================
-// 主頁面
-// ============================================
 interface Invoice {
   id: string;
-  invoice_number: string | null;
+  invoice_number: string;
   invoice_date: string;
   buyer_name: string;
-  buyer_tax_id: string | null;
-  buyer_email: string | null;
-  invoice_type: 'B2B' | 'B2C';
-  tax_type: string;
-  sales_amount: number;
+  buyer_tax_id: string;
+  amount: number;
   tax_amount: number;
   total_amount: number;
-  status: 'draft' | 'issued' | 'void' | 'cancelled';
-  billing_request_id: string | null;
-  ezpay_random_num: string | null;
-  void_reason: string | null;
-  created_at: string;
-  items?: InvoiceItem[];
-  billing?: {
-    id: string;
-    billing_number: string;
-    status: string;
-    paid_at: string | null;
-  } | null;
-  transaction?: {
-    id: string;
-    amount: number;
-    transaction_date: string;
-    description: string;
-  } | null;
+  status: string;
+  category: string;
 }
 
-interface InvoiceItem {
-  id: string;
-  item_name: string;
-  quantity: number;
-  unit: string;
-  unit_price: number;
-  amount: number;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  tax_id: string | null;
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-}
-
-interface BillingRequest {
-  id: string;
-  billing_number: string;
-  customer_name: string;
-  total_amount: number;
+interface InvoiceSettings {
+  merchant_id: string;
+  hash_key: string;
+  hash_iv: string;
 }
 
 export default function InvoicesPage() {
   const { company } = useAuthStore();
-  const searchParams = useSearchParams();
-  const billingIdFromUrl = searchParams.get('billing_id');
-
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<InvoiceSettings | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showVoidModal, setShowVoidModal] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
-
-  // 開票表單
-  const [form, setForm] = useState({
-    invoice_type: 'B2B' as 'B2B' | 'B2C',
-    tax_type: 'taxable',
-    customer_id: '',
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({ merchant_id: '', hash_key: '', hash_iv: '' });
+  const [issueForm, setIssueForm] = useState({
     buyer_name: '',
-    buyer_tax_id: '',
     buyer_email: '',
-    buyer_phone: '',
-    buyer_address: '',
-    carrier_type: '' as '' | '0' | '1' | '2',
+    buyer_tax_id: '',
+    category: 'B2C',
+    item_name: '',
+    item_price: '',
+    carrier_type: '',
     carrier_num: '',
-    love_code: '',
-    items: [{ name: '', quantity: 1, unit: '式', price: 0 }] as Array<{
-      name: string;
-      quantity: number;
-      unit: string;
-      price: number;
-    }>,
-    comment: '',
-    billing_request_id: '',
-    issue_to_ezpay: true,
   });
+  const [saving, setSaving] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
 
-  // 設定表單
-  const [settingsForm, setSettingsForm] = useState({
-    merchant_id: '',
-    hash_key: '',
-    hash_iv: '',
-    is_production: true,
-    default_tax_type: 'taxable',
-    auto_issue_on_payment: false,
-    auto_notify_customer: true,
-  });
-  const [hasConfig, setHasConfig] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-
-  // 作廢表單
-  const [voidReason, setVoidReason] = useState('');
-
-  // 載入資料
   useEffect(() => {
     if (company?.id) {
-      loadInvoices();
-      loadCustomers();
       loadSettings();
-
-      // 如果有 billing_id，自動開啟開票 Modal
-      if (billingIdFromUrl) {
-        loadBillingAndOpenModal(billingIdFromUrl);
-      }
+      loadInvoices();
     }
-  }, [company?.id, billingIdFromUrl]);
-
-  const loadInvoices = async () => {
-    if (!company?.id) return;
-    setIsLoading(true);
-    try {
-      const params = new URLSearchParams({ company_id: company.id });
-      if (statusFilter !== 'all') params.append('status', statusFilter);
-
-      const response = await fetch(`/api/invoices?${params}`);
-      const result = await response.json();
-      if (result.data) {
-        setInvoices(result.data);
-      }
-    } catch (error) {
-      console.error('Error loading invoices:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadCustomers = async () => {
-    if (!company?.id) return;
-    try {
-      const response = await fetch(`/api/customers?company_id=${company.id}`);
-      const result = await response.json();
-      if (result.data) {
-        setCustomers(result.data);
-      }
-    } catch (error) {
-      console.error('Error loading customers:', error);
-    }
-  };
+  }, [company]);
 
   const loadSettings = async () => {
-    if (!company?.id) return;
-    try {
-      const response = await fetch(`/api/invoices/settings?company_id=${company.id}`);
-      const result = await response.json();
-      if (result.data) {
-        setSettingsForm({
-          merchant_id: result.data.merchant_id || '',
-          hash_key: '', // 不顯示完整金鑰
-          hash_iv: '',
-          is_production: result.data.is_production ?? true,
-          default_tax_type: result.data.default_tax_type || 'taxable',
-          auto_issue_on_payment: result.data.auto_issue_on_payment ?? false,
-          auto_notify_customer: result.data.auto_notify_customer ?? true,
-        });
-        setHasConfig(result.data.has_config);
-      }
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    }
-  };
-
-  const loadBillingAndOpenModal = async (billingId: string) => {
-    try {
-      const response = await fetch(`/api/billing?company_id=${company?.id}&id=${billingId}`);
-      const result = await response.json();
-      if (result.data && result.data.length > 0) {
-        const billing = result.data[0];
-        // 從客戶資料填入
-        const customer = customers.find(c => c.id === billing.customer_id);
-
-        setForm(prev => ({
-          ...prev,
-          billing_request_id: billingId,
-          buyer_name: billing.customer_name,
-          buyer_tax_id: customer?.tax_id || '',
-          buyer_email: billing.customer_email || customer?.email || '',
-          buyer_phone: customer?.phone || '',
-          buyer_address: customer?.address || '',
-          invoice_type: customer?.tax_id ? 'B2B' : 'B2C',
-          items: [{
-            name: billing.title || '服務費',
-            quantity: 1,
-            unit: '式',
-            price: billing.total_amount,
-          }],
-        }));
-        setShowModal(true);
-      }
-    } catch (error) {
-      console.error('Error loading billing:', error);
-    }
-  };
-
-  // 選擇客戶
-  const handleCustomerSelect = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      setForm(prev => ({
-        ...prev,
-        customer_id: customerId,
-        buyer_name: customer.name,
-        buyer_tax_id: customer.tax_id || '',
-        buyer_email: customer.email || '',
-        buyer_phone: customer.phone || '',
-        buyer_address: customer.address || '',
-        invoice_type: customer.tax_id ? 'B2B' : 'B2C',
-      }));
-    }
-  };
-
-  // 新增品項
-  const addItem = () => {
-    setForm(prev => ({
-      ...prev,
-      items: [...prev.items, { name: '', quantity: 1, unit: '式', price: 0 }],
-    }));
-  };
-
-  // 刪除品項
-  const removeItem = (index: number) => {
-    if (form.items.length <= 1) return;
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index),
-    }));
-  };
-
-  // 更新品項
-  const updateItem = (index: number, field: string, value: string | number) => {
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.map((item, i) =>
-        i === index ? { ...item, [field]: value } : item
-      ),
-    }));
-  };
-
-  // 品項選擇器回調 - 更新整個品項
-  const handleProductSelect = (index: number, product: { name: string; unit: string; price: number }) => {
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.map((item, i) =>
-        i === index ? {
-          ...item,
-          name: product.name,
-          unit: product.unit,
-          price: product.price
-        } : item
-      ),
-    }));
-  };
-
-  // 計算總金額
-  const totalAmount = useMemo(() => {
-    return form.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  }, [form.items]);
-
-  // 開立發票
-  const handleSubmit = async () => {
-    if (!company?.id) return;
-
-    if (!form.buyer_name) {
-      alert('請填寫買受人名稱');
-      return;
-    }
-
-    if (form.invoice_type === 'B2B' && !form.buyer_tax_id) {
-      alert('B2B 發票請填寫統一編號');
-      return;
-    }
-
-    if (form.items.some(item => !item.name || item.price <= 0)) {
-      alert('請填寫完整的品項資料');
-      return;
-    }
-
-    if (form.issue_to_ezpay && !hasConfig) {
-      alert('尚未設定 ezPay API，請先至設定頁面設定');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch('/api/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_id: company.id,
-          ...form,
-        }),
+    const { data } = await supabase
+      .from('acct_invoice_settings')
+      .select('*')
+      .eq('company_id', company?.id)
+      .single();
+    
+    if (data) {
+      setSettings(data);
+      setSettingsForm({
+        merchant_id: data.merchant_id || '',
+        hash_key: data.hash_key || '',
+        hash_iv: data.hash_iv || '',
       });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setShowModal(false);
-        loadInvoices();
-        alert(result.message || '發票已開立');
-
-        // 重置表單
-        resetForm();
-      } else {
-        alert(result.error || '開立失敗');
-      }
-    } catch (error) {
-      console.error('Error creating invoice:', error);
-      alert('開立失敗');
-    } finally {
-      setIsSaving(false);
     }
   };
 
-  // 重置表單
-  const resetForm = () => {
-    setForm({
-      invoice_type: 'B2B',
-      tax_type: 'taxable',
-      customer_id: '',
-      buyer_name: '',
-      buyer_tax_id: '',
-      buyer_email: '',
-      buyer_phone: '',
-      buyer_address: '',
-      carrier_type: '',
-      carrier_num: '',
-      love_code: '',
-      items: [{ name: '', quantity: 1, unit: '式', price: 0 }],
-      comment: '',
-      billing_request_id: '',
-      issue_to_ezpay: true,
-    });
+  const loadInvoices = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('acct_invoices')
+      .select('*')
+      .eq('company_id', company?.id)
+      .order('created_at', { ascending: false });
+    
+    setInvoices(data || []);
+    setLoading(false);
   };
 
-  // 儲存設定
   const handleSaveSettings = async () => {
     if (!company?.id) return;
+    setSaving(true);
+    setMessage({ type: '', text: '' });
 
-    if (!settingsForm.merchant_id) {
-      alert('請填寫商店代號');
-      return;
-    }
+    const { error } = await supabase
+      .from('acct_invoice_settings')
+      .upsert({
+        company_id: company.id,
+        merchant_id: settingsForm.merchant_id,
+        hash_key: settingsForm.hash_key,
+        hash_iv: settingsForm.hash_iv,
+      }, { onConflict: 'company_id' });
 
-    // 只有在有填寫新值時才驗證
-    if (settingsForm.hash_key && settingsForm.hash_key.length !== 32) {
-      alert('HashKey 必須為 32 字元');
-      return;
-    }
-
-    if (settingsForm.hash_iv && settingsForm.hash_iv.length !== 16) {
-      alert('HashIV 必須為 16 字元');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const response = await fetch('/api/invoices/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_id: company.id,
-          ...settingsForm,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setShowSettingsModal(false);
-        loadSettings();
-        alert('設定已儲存');
-      } else {
-        alert(result.error || '儲存失敗');
-      }
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      alert('儲存失敗');
-    } finally {
-      setIsSaving(false);
+    setSaving(false);
+    if (error) {
+      setMessage({ type: 'error', text: '儲存失敗：' + error.message });
+    } else {
+      setMessage({ type: 'success', text: '設定已儲存' });
+      loadSettings();
+      setTimeout(() => setShowSettingsModal(false), 1000);
     }
   };
 
-  // 測試 API 連線
-  const handleTestApi = async () => {
-    if (!company?.id) return;
-
-    setIsTesting(true);
-    try {
-      const response = await fetch('/api/invoices/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id: company.id }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        alert(`✅ ${result.message}\n環境：${result.environment}`);
-      } else {
-        alert(`❌ ${result.error || '測試失敗'}`);
-      }
-    } catch (error) {
-      console.error('Error testing API:', error);
-      alert('測試失敗');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  // 作廢發票
-  const handleVoid = async () => {
-    if (!selectedInvoice || !voidReason) {
-      alert('請填寫作廢原因');
+  const handleIssueInvoice = async () => {
+    if (!company?.id || !settings) return;
+    if (!issueForm.buyer_name || !issueForm.item_name || !issueForm.item_price) {
+      setMessage({ type: 'error', text: '請填寫必填欄位' });
       return;
     }
 
-    setIsSaving(true);
-    try {
-      const response = await fetch('/api/invoices', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedInvoice.id,
-          action: 'void',
-          void_reason: voidReason,
-        }),
-      });
+    setIssuing(true);
+    setMessage({ type: '', text: '' });
 
-      const result = await response.json();
-
-      if (result.success) {
-        setShowVoidModal(false);
-        setSelectedInvoice(null);
-        setVoidReason('');
-        loadInvoices();
-        alert('發票已作廢');
-      } else {
-        alert(result.error || '作廢失敗');
-      }
-    } catch (error) {
-      console.error('Error voiding invoice:', error);
-      alert('作廢失敗');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // 刪除草稿
-  const handleDelete = async (id: string) => {
-    if (!confirm('確定要刪除此草稿？')) return;
-
-    try {
-      const response = await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' });
-      const result = await response.json();
-
-      if (result.success) {
-        loadInvoices();
-      } else {
-        alert(result.error || '刪除失敗');
-      }
-    } catch (error) {
-      console.error('Error deleting invoice:', error);
-      alert('刪除失敗');
-    }
-  };
-
-  // 篩選發票
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => {
-      if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        if (
-          !inv.invoice_number?.toLowerCase().includes(search) &&
-          !inv.buyer_name.toLowerCase().includes(search) &&
-          !inv.buyer_tax_id?.toLowerCase().includes(search)
-        ) {
-          return false;
-        }
-      }
-      if (typeFilter !== 'all' && inv.invoice_type !== typeFilter) {
-        return false;
-      }
-      return true;
+    const price = parseInt(issueForm.item_price);
+    
+    const res = await fetch('/api/invoices/issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company_id: company.id,
+        buyer_name: issueForm.buyer_name,
+        buyer_email: issueForm.buyer_email,
+        buyer_tax_id: issueForm.buyer_tax_id,
+        category: issueForm.category,
+        carrier_type: issueForm.carrier_type,
+        carrier_num: issueForm.carrier_num,
+        items: [{
+          name: issueForm.item_name,
+          count: 1,
+          unit: '式',
+          price: price,
+          amount: price,
+        }],
+      }),
     });
-  }, [invoices, searchTerm, typeFilter]);
 
-  // 統計資料
-  const stats = useMemo(() => {
-    const thisMonth = new Date().toISOString().slice(0, 7);
-    const monthInvoices = invoices.filter(inv =>
-      inv.invoice_date.startsWith(thisMonth) && inv.status === 'issued'
-    );
+    const data = await res.json();
+    setIssuing(false);
 
-    return {
-      total: invoices.length,
-      issued: invoices.filter(inv => inv.status === 'issued').length,
-      draft: invoices.filter(inv => inv.status === 'draft').length,
-      void: invoices.filter(inv => inv.status === 'void').length,
-      monthCount: monthInvoices.length,
-      monthAmount: monthInvoices.reduce((sum, inv) => sum + inv.total_amount, 0),
-    };
-  }, [invoices]);
-
-  // 狀態樣式
-  const getStatusStyle = (status: string) => {
-    switch (status) {
-      case 'issued': return 'bg-green-100 text-green-700';
-      case 'draft': return 'bg-gray-100 text-gray-700';
-      case 'void': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
+    if (data.success) {
+      setMessage({ type: 'success', text: `發票開立成功！號碼：${data.result?.InvoiceNumber}` });
+      loadInvoices();
+      setTimeout(() => {
+        setShowIssueModal(false);
+        setIssueForm({ buyer_name: '', buyer_email: '', buyer_tax_id: '', category: 'B2C', item_name: '', item_price: '', carrier_type: '', carrier_num: '' });
+      }, 2000);
+    } else {
+      setMessage({ type: 'error', text: `開立失敗：${data.message}` });
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'issued': return '已開立';
-      case 'draft': return '草稿';
-      case 'void': return '已作廢';
-      default: return status;
-    }
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    issued: { label: '已開立', color: 'bg-green-100 text-green-700' },
+    voided: { label: '已作廢', color: 'bg-red-100 text-red-700' },
   };
-
-  const formatAmount = (amount: number) => `NT$ ${amount.toLocaleString()}`;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Receipt className="w-7 h-7 text-brand-primary-600" />
-            電子發票
-          </h1>
-          <p className="text-gray-500 mt-1">ezPay 電子發票管理</p>
+          <h1 className="text-2xl font-bold">電子發票</h1>
+          <p className="text-gray-500">管理 ezPay 電子發票</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex gap-3">
           <button
             onClick={() => setShowSettingsModal(true)}
-            className="btn-secondary flex items-center gap-2"
+            className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-2"
           >
             <Settings className="w-4 h-4" />
-            設定
+            發票設定
           </button>
           <button
             onClick={() => {
-              resetForm();
-              setShowModal(true);
+              if (!settings) {
+                alert('請先設定發票金鑰');
+                setShowSettingsModal(true);
+                return;
+              }
+              setShowIssueModal(true);
             }}
-            className="btn-primary flex items-center gap-2"
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             開立發票
@@ -763,218 +191,54 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* 統計卡片 */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="brand-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.monthCount}</p>
-              <p className="text-sm text-gray-500">本月開立</p>
-            </div>
+      {/* 設定狀態提示 */}
+      {!settings && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
+          <Settings className="w-5 h-5 text-yellow-600" />
+          <div>
+            <p className="font-medium text-yellow-800">尚未設定發票金鑰</p>
+            <p className="text-sm text-yellow-600">請先設定 ezPay 商店代號與金鑰才能開立發票</p>
           </div>
         </div>
-        <div className="brand-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-green-600">{formatAmount(stats.monthAmount)}</p>
-              <p className="text-sm text-gray-500">本月金額</p>
-            </div>
-          </div>
-        </div>
-        <div className="brand-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.draft}</p>
-              <p className="text-sm text-gray-500">草稿</p>
-            </div>
-          </div>
-        </div>
-        <div className="brand-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-              <XCircle className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-red-600">{stats.void}</p>
-              <p className="text-sm text-gray-500">已作廢</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 篩選列 */}
-      <div className="brand-card p-4">
-        <div className="flex items-center gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="搜尋發票號碼、買受人..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={statusFilter}
-              onChange={e => {
-                setStatusFilter(e.target.value);
-                loadInvoices();
-              }}
-              className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-            >
-              <option value="all">全部狀態</option>
-              <option value="issued">已開立</option>
-              <option value="draft">草稿</option>
-              <option value="void">已作廢</option>
-            </select>
-            <select
-              value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-            >
-              <option value="all">全部類型</option>
-              <option value="B2B">B2B</option>
-              <option value="B2C">B2C</option>
-            </select>
-            <button
-              onClick={loadInvoices}
-              className="p-2 hover:bg-gray-100 rounded-lg"
-            >
-              <RefreshCw className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* 發票列表 */}
-      <div className="brand-card overflow-hidden">
-        {isLoading ? (
-          <div className="p-12 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-brand-primary-600" />
-            <p className="mt-2 text-gray-500">載入中...</p>
-          </div>
-        ) : filteredInvoices.length === 0 ? (
-          <div className="p-12 text-center">
-            <Receipt className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500">尚無發票資料</p>
+      <div className="bg-white rounded-xl border">
+        {loading ? (
+          <div className="p-8 text-center">載入中...</div>
+        ) : invoices.length === 0 ? (
+          <div className="p-8 text-center">
+            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500">尚無發票記錄</p>
           </div>
         ) : (
           <table className="w-full">
-            <thead className="bg-gray-50 border-b">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">發票號碼</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">日期</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">買受人</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">類型</th>
-                <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">金額</th>
-                <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">狀態</th>
-                <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">收款</th>
-                <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">操作</th>
+                <th className="text-left p-4">發票號碼</th>
+                <th className="text-left p-4">買受人</th>
+                <th className="text-left p-4">統編</th>
+                <th className="text-right p-4">金額</th>
+                <th className="text-center p-4">類型</th>
+                <th className="text-center p-4">狀態</th>
+                <th className="text-center p-4">開立日期</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
-              {filteredInvoices.map(invoice => (
-                <tr key={invoice.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">
-                      {invoice.invoice_number || '（草稿）'}
-                    </div>
-                    {invoice.ezpay_random_num && (
-                      <div className="text-xs text-gray-500">
-                        隨機碼：{invoice.ezpay_random_num}
-                      </div>
-                    )}
-                    {invoice.billing && (
-                      <div className="text-xs text-blue-600">
-                        📋 {invoice.billing.billing_number}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {invoice.invoice_date}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm font-medium text-gray-900">{invoice.buyer_name}</div>
-                    {invoice.buyer_tax_id && (
-                      <div className="text-xs text-gray-500">統編：{invoice.buyer_tax_id}</div>
-                    )}
-                    {invoice.buyer_email && (
-                      <div className="text-xs text-green-600">✉️ {invoice.buyer_email}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${invoice.invoice_type === 'B2B' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                      }`}>
-                      {invoice.invoice_type === 'B2B' ? <Building2 className="w-3 h-3" /> : <User className="w-3 h-3" />}
-                      {invoice.invoice_type}
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id} className="border-t hover:bg-gray-50">
+                  <td className="p-4 font-mono">{inv.invoice_number}</td>
+                  <td className="p-4">{inv.buyer_name}</td>
+                  <td className="p-4">{inv.buyer_tax_id || '-'}</td>
+                  <td className="p-4 text-right">${inv.total_amount?.toLocaleString()}</td>
+                  <td className="p-4 text-center">{inv.category}</td>
+                  <td className="p-4 text-center">
+                    <span className={`px-2 py-1 rounded-full text-xs ${statusLabels[inv.status]?.color || 'bg-gray-100'}`}>
+                      {statusLabels[inv.status]?.label || inv.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="font-semibold text-gray-900">{formatAmount(invoice.total_amount)}</div>
-                    <div className="text-xs text-gray-500">
-                      稅額：{formatAmount(invoice.tax_amount)}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(invoice.status)}`}>
-                      {getStatusText(invoice.status)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {invoice.billing?.paid_at ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        <CheckCircle className="w-3 h-3" />
-                        已收款
-                      </span>
-                    ) : invoice.billing ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-                        <Clock className="w-3 h-3" />
-                        待收款
-                      </span>
-                    ) : invoice.transaction ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        <CheckCircle className="w-3 h-3" />
-                        已記帳
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      {invoice.status === 'issued' && (
-                        <button
-                          onClick={() => {
-                            setSelectedInvoice(invoice);
-                            setShowVoidModal(true);
-                          }}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                          title="作廢"
-                        >
-                          <Ban className="w-4 h-4" />
-                        </button>
-                      )}
-                      {invoice.status === 'draft' && (
-                        <button
-                          onClick={() => handleDelete(invoice.id)}
-                          className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                          title="刪除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                  <td className="p-4 text-center text-gray-500">
+                    {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : '-'}
                   </td>
                 </tr>
               ))}
@@ -983,469 +247,125 @@ export default function InvoicesPage() {
         )}
       </div>
 
-      {/* 開票 Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-brand-primary-600" />
-                開立電子發票
-              </h3>
-              <button onClick={() => setShowModal(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* 發票類型 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">發票類型</label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, invoice_type: 'B2B' }))}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${form.invoice_type === 'B2B'
-                        ? 'border-brand-primary-500 bg-brand-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-5 h-5" />
-                      <span className="font-medium">B2B 發票</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">公司行號（需統編）</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, invoice_type: 'B2C' }))}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${form.invoice_type === 'B2C'
-                        ? 'border-brand-primary-500 bg-brand-primary-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <User className="w-5 h-5" />
-                      <span className="font-medium">B2C 發票</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">個人消費者</p>
-                  </button>
-                </div>
-              </div>
-
-              {/* 買受人資訊 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">買受人資訊</label>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">選擇客戶</label>
-                    <select
-                      value={form.customer_id}
-                      onChange={e => handleCustomerSelect(e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="">-- 選擇或手動輸入 --</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} {c.tax_id ? `(${c.tax_id})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      買受人名稱 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={form.buyer_name}
-                      onChange={e => setForm(prev => ({ ...prev, buyer_name: e.target.value }))}
-                      className="input-field"
-                      placeholder="公司名稱或個人姓名"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      統一編號 {form.invoice_type === 'B2B' && <span className="text-red-500">*</span>}
-                    </label>
-                    <input
-                      type="text"
-                      value={form.buyer_tax_id}
-                      onChange={e => setForm(prev => ({ ...prev, buyer_tax_id: e.target.value }))}
-                      className="input-field"
-                      placeholder="8 碼統編"
-                      maxLength={8}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={form.buyer_email}
-                      onChange={e => setForm(prev => ({ ...prev, buyer_email: e.target.value }))}
-                      className="input-field"
-                      placeholder="發票寄送 Email"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">電話</label>
-                    <input
-                      type="text"
-                      value={form.buyer_phone}
-                      onChange={e => setForm(prev => ({ ...prev, buyer_phone: e.target.value }))}
-                      className="input-field"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* B2C 載具/捐贈 */}
-              {form.invoice_type === 'B2C' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">載具/捐贈</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">載具類型</label>
-                      <select
-                        value={form.carrier_type}
-                        onChange={e => setForm(prev => ({ ...prev, carrier_type: e.target.value as any }))}
-                        className="input-field"
-                      >
-                        <option value="">不使用載具</option>
-                        <option value="0">手機條碼</option>
-                        <option value="1">自然人憑證</option>
-                        <option value="2">ezPay 載具</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">載具號碼</label>
-                      <input
-                        type="text"
-                        value={form.carrier_num}
-                        onChange={e => setForm(prev => ({ ...prev, carrier_num: e.target.value }))}
-                        className="input-field"
-                        placeholder="/ABC+123"
-                        disabled={!form.carrier_type}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-gray-500 mb-1">愛心碼（捐贈發票）</label>
-                      <input
-                        type="text"
-                        value={form.love_code}
-                        onChange={e => setForm(prev => ({ ...prev, love_code: e.target.value }))}
-                        className="input-field"
-                        placeholder="3~7 碼愛心碼"
-                        maxLength={7}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 發票品項 - 使用品項選擇器 */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">發票品項</label>
-                  <button
-                    type="button"
-                    onClick={addItem}
-                    className="text-sm text-brand-primary-600 hover:text-brand-primary-700 flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" />
-                    新增品項
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  {form.items.map((item, index) => (
-                    <div key={index} className="p-3 bg-gray-50 rounded-lg space-y-2">
-                      {/* 品項名稱 - 使用選擇器 */}
-                      <div className="flex items-center gap-2">
-                        <ProductSelector
-                          companyId={company?.id || ''}
-                          value={item.name}
-                          unit={item.unit}
-                          price={item.price}
-                          onSelect={(product) => handleProductSelect(index, product)}
-                        />
-                        {form.items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(index)}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded flex-shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                      {/* 數量、單位、單價 */}
-                      <div className="grid grid-cols-4 gap-2">
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">數量</label>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={e => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                            className="input-field text-center"
-                            min="1"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">單位</label>
-                          <select
-                            value={item.unit}
-                            onChange={e => updateItem(index, 'unit', e.target.value)}
-                            className="input-field"
-                          >
-                            <option value="式">式</option>
-                            <option value="月">月</option>
-                            <option value="次">次</option>
-                            <option value="件">件</option>
-                            <option value="個">個</option>
-                            <option value="組">組</option>
-                            <option value="套">套</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">單價</label>
-                          <input
-                            type="number"
-                            value={item.price}
-                            onChange={e => updateItem(index, 'price', parseInt(e.target.value) || 0)}
-                            className="input-field text-right"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">小計</label>
-                          <div className="input-field bg-gray-100 text-right font-medium">
-                            {(item.price * item.quantity).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-                  <span className="font-medium text-gray-700">發票總金額</span>
-                  <span className="text-2xl font-bold text-brand-primary-600">{formatAmount(totalAmount)}</span>
-                </div>
-              </div>
-
-              {/* 備註 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
-                <textarea
-                  value={form.comment}
-                  onChange={e => setForm(prev => ({ ...prev, comment: e.target.value }))}
-                  className="input-field"
-                  rows={2}
-                  placeholder="發票備註（選填）"
-                />
-              </div>
-
-              {/* 開立選項 */}
-              <div className="flex items-center gap-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="issue_to_ezpay"
-                  checked={form.issue_to_ezpay}
-                  onChange={e => setForm(prev => ({ ...prev, issue_to_ezpay: e.target.checked }))}
-                  className="w-4 h-4 text-brand-primary-600"
-                />
-                <label htmlFor="issue_to_ezpay" className="text-sm">
-                  <span className="font-medium">立即開立 ezPay 電子發票</span>
-                  <span className="text-gray-500 ml-2">（取消勾選則只儲存草稿）</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
-              <button onClick={() => setShowModal(false)} className="btn-secondary">
-                取消
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={isSaving}
-                className="btn-primary flex items-center gap-2"
-              >
-                {isSaving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                {form.issue_to_ezpay ? '開立發票' : '儲存草稿'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 設定 Modal */}
       {showSettingsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full">
-            <div className="border-b px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                ezPay API 設定
-              </h3>
-              <button onClick={() => setShowSettingsModal(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSettingsModal(false)}>
+          <div className="bg-white rounded-xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">ezPay 發票設定</h2>
+              <button onClick={() => setShowSettingsModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
-
-            <div className="p-6 space-y-4">
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                <p className="font-medium mb-1">設定說明</p>
-                <p>請至 ezPay 電子發票平台取得 API 金鑰</p>
-                <a
-                  href="https://inv.ezpay.com.tw"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline flex items-center gap-1 mt-1"
-                >
-                  前往 ezPay <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
+            <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  商店代號 (Merchant ID) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={settingsForm.merchant_id}
-                  onChange={e => setSettingsForm(prev => ({ ...prev, merchant_id: e.target.value }))}
-                  className="input-field"
-                  placeholder="例：347148408"
-                />
+                <label className="block text-sm font-medium mb-1">商店代號 (MerchantID)</label>
+                <input type="text" value={settingsForm.merchant_id} onChange={e => setSettingsForm({ ...settingsForm, merchant_id: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：347148408" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  HashKey (32 字元)
-                </label>
-                <input
-                  type="password"
-                  value={settingsForm.hash_key}
-                  onChange={e => setSettingsForm(prev => ({ ...prev, hash_key: e.target.value }))}
-                  className="input-field font-mono"
-                  placeholder={hasConfig ? '已設定（留空不修改）' : '請輸入 HashKey'}
-                />
+                <label className="block text-sm font-medium mb-1">HashKey</label>
+                <input type="text" value={settingsForm.hash_key} onChange={e => setSettingsForm({ ...settingsForm, hash_key: e.target.value })} className="w-full border rounded-lg px-4 py-2 font-mono text-sm" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  HashIV (16 字元)
-                </label>
-                <input
-                  type="password"
-                  value={settingsForm.hash_iv}
-                  onChange={e => setSettingsForm(prev => ({ ...prev, hash_iv: e.target.value }))}
-                  className="input-field font-mono"
-                  placeholder={hasConfig ? '已設定（留空不修改）' : '請輸入 HashIV'}
-                />
+                <label className="block text-sm font-medium mb-1">HashIV</label>
+                <input type="text" value={settingsForm.hash_iv} onChange={e => setSettingsForm({ ...settingsForm, hash_iv: e.target.value })} className="w-full border rounded-lg px-4 py-2 font-mono text-sm" />
               </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="is_production"
-                  checked={settingsForm.is_production}
-                  onChange={e => setSettingsForm(prev => ({ ...prev, is_production: e.target.checked }))}
-                  className="w-4 h-4 text-brand-primary-600"
-                />
-                <label htmlFor="is_production" className="text-sm text-gray-700">
-                  使用正式環境
-                </label>
-              </div>
-
-              {hasConfig && (
-                <button
-                  onClick={handleTestApi}
-                  disabled={isTesting}
-                  className="w-full btn-secondary flex items-center justify-center gap-2"
-                >
-                  {isTesting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  測試 API 連線
-                </button>
+              {message.text && (
+                <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                  {message.text}
+                </div>
               )}
-            </div>
-
-            <div className="border-t px-6 py-4 flex justify-end gap-3">
-              <button onClick={() => setShowSettingsModal(false)} className="btn-secondary">
-                取消
-              </button>
-              <button
-                onClick={handleSaveSettings}
-                disabled={isSaving}
-                className="btn-primary flex items-center gap-2"
-              >
-                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                儲存設定
-              </button>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowSettingsModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                <button onClick={handleSaveSettings} disabled={saving} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                  {saving ? '儲存中...' : '儲存設定'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 作廢 Modal */}
-      {showVoidModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full">
-            <div className="border-b px-6 py-4">
-              <h3 className="text-lg font-semibold text-red-600 flex items-center gap-2">
-                <Ban className="w-5 h-5" />
-                作廢發票
-              </h3>
+      {/* 開立發票 Modal */}
+      {showIssueModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowIssueModal(false)}>
+          <div className="bg-white rounded-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">開立電子發票</h2>
+              <button onClick={() => setShowIssueModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
-
-            <div className="p-6 space-y-4">
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-800">
-                  確定要作廢發票 <span className="font-bold">{selectedInvoice.invoice_number}</span>？
-                </p>
-                <p className="text-sm text-red-600 mt-1">此操作無法復原。</p>
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium mb-1">買受人名稱 *</label>
+                  <input type="text" value={issueForm.buyer_name} onChange={e => setIssueForm({ ...issueForm, buyer_name: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email</label>
+                  <input type="email" value={issueForm.buyer_email} onChange={e => setIssueForm({ ...issueForm, buyer_email: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">發票類型</label>
+                  <select value={issueForm.category} onChange={e => setIssueForm({ ...issueForm, category: e.target.value })} className="w-full border rounded-lg px-4 py-2">
+                    <option value="B2C">B2C (個人)</option>
+                    <option value="B2B">B2B (公司)</option>
+                  </select>
+                </div>
+                {issueForm.category === 'B2B' && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">統一編號 *</label>
+                    <input type="text" value={issueForm.buyer_tax_id} onChange={e => setIssueForm({ ...issueForm, buyer_tax_id: e.target.value })} className="w-full border rounded-lg px-4 py-2" />
+                  </div>
+                )}
               </div>
+
+              <hr />
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  作廢原因 <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={voidReason}
-                  onChange={e => setVoidReason(e.target.value)}
-                  className="input-field"
-                  rows={3}
-                  placeholder="請填寫作廢原因..."
-                />
+                <label className="block text-sm font-medium mb-1">品項名稱 *</label>
+                <input type="text" value={issueForm.item_name} onChange={e => setIssueForm({ ...issueForm, item_name: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：顧問服務費" />
               </div>
-            </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">金額（未稅）*</label>
+                <input type="number" value={issueForm.item_price} onChange={e => setIssueForm({ ...issueForm, item_price: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder="例：10000" />
+                {issueForm.item_price && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    稅額：${Math.round(parseInt(issueForm.item_price) * 0.05).toLocaleString()} / 
+                    總計：${Math.round(parseInt(issueForm.item_price) * 1.05).toLocaleString()}
+                  </p>
+                )}
+              </div>
 
-            <div className="border-t px-6 py-4 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowVoidModal(false);
-                  setSelectedInvoice(null);
-                  setVoidReason('');
-                }}
-                className="btn-secondary"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleVoid}
-                disabled={isSaving || !voidReason}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                確認作廢
-              </button>
+              <hr />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">載具類型</label>
+                  <select value={issueForm.carrier_type} onChange={e => setIssueForm({ ...issueForm, carrier_type: e.target.value })} className="w-full border rounded-lg px-4 py-2">
+                    <option value="">無（列印紙本）</option>
+                    <option value="0">手機條碼</option>
+                    <option value="1">自然人憑證</option>
+                    <option value="2">ezPay 載具</option>
+                  </select>
+                </div>
+                {issueForm.carrier_type && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">載具號碼</label>
+                    <input type="text" value={issueForm.carrier_num} onChange={e => setIssueForm({ ...issueForm, carrier_num: e.target.value })} className="w-full border rounded-lg px-4 py-2" placeholder={issueForm.carrier_type === '0' ? '/ABC+123' : ''} />
+                  </div>
+                )}
+              </div>
+
+              {message.text && (
+                <div className={`px-4 py-2 rounded-lg text-sm ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                  {message.text}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowIssueModal(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                <button onClick={handleIssueInvoice} disabled={issuing} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {issuing ? '開立中...' : <><Check className="w-4 h-4" />開立發票</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>
