@@ -54,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // 先取得合約資料
   const { data: contract } = await supabase
     .from('acct_contracts')
-    .select('*, customer:acct_customers(*)')
+    .select('*')
     .eq('signature_token', token)
     .gt('signature_token_expires_at', new Date().toISOString())
     .single();
@@ -82,52 +82,59 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 自動建立請款單
-  let payableId = null;
+  // 自動建立請款單（應收帳款）
+  let billingId = null;
   try {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (contract.payment_due_days || 30));
 
-    const payableData = {
+    // 產生請款單號
+    const { data: numberData } = await supabase
+      .rpc('generate_billing_number', { p_company_id: contract.company_id });
+    
+    const billing_number = numberData || `BIL${Date.now()}`;
+
+    const billingData = {
       company_id: contract.company_id,
-      contract_id: contract.id,
-      customer_id: contract.customer_id,
+      billing_number,
+      customer_id: contract.customer_id || null,
       customer_name: contract.customer_name,
-      customer_tax_id: contract.customer_tax_id,
-      customer_email: contract.customer_email,
-      title: `${contract.title} - 請款`,
-      description: `合約 ${contract.contract_number} 簽署完成自動建立`,
+      customer_tax_id: contract.customer_tax_id || null,
+      customer_email: contract.customer_email || null,
+      title: `${contract.title}`,
+      description: `合約 ${contract.contract_number} 簽署完成`,
       amount: contract.subtotal,
       tax_amount: contract.tax_amount,
       total_amount: contract.total_amount,
-      status: 'pending',
+      status: 'draft',
       due_date: dueDate.toISOString().split('T')[0],
     };
 
-    const { data: payable, error: payableError } = await supabase
-      .from('acct_payable_requests')
-      .insert(payableData)
+    const { data: billing, error: billingError } = await supabase
+      .from('acct_billing_requests')
+      .insert(billingData)
       .select()
       .single();
 
-    if (payableError) {
-      console.error('建立請款單失敗:', payableError);
+    if (billingError) {
+      console.error('建立請款單失敗:', billingError);
     } else {
-      payableId = payable?.id;
+      billingId = billing?.id;
+      console.log('請款單建立成功:', billingId);
     }
   } catch (e) {
     console.error('建立請款單異常:', e);
   }
 
-  // 發送 LINE 通知（通知公司合約已簽署）
+  // 發送 LINE 通知給管理群組（不是客戶）
   try {
     const { data: lineSettings } = await supabase
       .from('acct_line_settings')
-      .select('channel_access_token, is_active')
+      .select('channel_access_token, is_active, admin_group_id')
       .eq('company_id', contract.company_id)
       .single();
 
-    if (lineSettings?.channel_access_token && lineSettings?.is_active && contract.customer?.line_group_id) {
+    if (lineSettings?.channel_access_token && lineSettings?.is_active && lineSettings?.admin_group_id) {
       const message = `✅ 合約簽署完成通知\n\n` +
         `合約編號：${contract.contract_number}\n` +
         `客戶：${contract.customer_name}\n` +
@@ -137,7 +144,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       await sendLineNotification(
         lineSettings.channel_access_token,
-        contract.customer.line_group_id,
+        lineSettings.admin_group_id,
         message
       );
     }
@@ -145,5 +152,5 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     console.error('LINE notification error:', e);
   }
 
-  return NextResponse.json({ success: true, payable_id: payableId });
+  return NextResponse.json({ success: true, billing_id: billingId });
 }
