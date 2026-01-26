@@ -15,6 +15,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const body = await request.json();
   const { items, ...contractData } = body;
 
+  // 處理空字串日期欄位，轉為 null
+  const dateFields = ['contract_date', 'start_date', 'end_date', 'signed_at', 'valid_until'];
+  dateFields.forEach(field => {
+    if (contractData[field] === '' || contractData[field] === undefined) {
+      contractData[field] = null;
+    }
+  });
+
   const { data, error } = await supabase.from('acct_contracts').update(contractData).eq('id', id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
