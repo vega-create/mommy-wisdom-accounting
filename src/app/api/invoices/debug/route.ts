@@ -27,33 +27,36 @@ export async function GET() {
     return NextResponse.json({ error: 'No settings found' });
   }
 
-  // 檢查是否有隱藏字符
-  const rawKey = settings.hash_key;
-  const rawIV = settings.hash_iv;
-  const trimmedKey = rawKey.trim();
-  const trimmedIV = rawIV.trim();
-  
+  const { merchant_id, hash_key, hash_iv } = settings;
   const testData = 'RespondType=JSON&Version=1.5&TimeStamp=' + Math.floor(Date.now()/1000);
-  
-  // 用 trim 過的金鑰測試
-  const encrypted = aesEncrypt(testData, trimmedKey, trimmedIV);
+  const encrypted = aesEncrypt(testData, hash_key, hash_iv);
 
-  const prodRes = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
+  // 方法1: URLSearchParams
+  const res1 = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ MerchantID_: settings.merchant_id, PostData_: encrypted }),
+    body: new URLSearchParams({ MerchantID_: merchant_id, PostData_: encrypted }),
+  }).then(r => r.json());
+
+  // 方法2: 手動構建 body
+  const res2 = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `MerchantID_=${merchant_id}&PostData_=${encrypted}`,
+  }).then(r => r.json());
+
+  // 方法3: 加密後轉大寫
+  const res3 = await fetch('https://inv.ezpay.com.tw/Api/invoice_issue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `MerchantID_=${merchant_id}&PostData_=${encrypted.toUpperCase()}`,
   }).then(r => r.json());
 
   return NextResponse.json({
-    merchant_id: settings.merchant_id,
-    raw_key_length: rawKey.length,
-    trimmed_key_length: trimmedKey.length,
-    raw_iv_length: rawIV.length,
-    trimmed_iv_length: trimmedIV.length,
-    key_has_whitespace: rawKey !== trimmedKey,
-    iv_has_whitespace: rawIV !== trimmedIV,
-    key_hex: Buffer.from(trimmedKey).toString('hex'),
-    iv_hex: Buffer.from(trimmedIV).toString('hex'),
-    result: { status: prodRes.Status, message: prodRes.Message },
+    merchant_id,
+    encrypted_sample: encrypted.substring(0, 40),
+    method1_urlsearch: { status: res1.Status, message: res1.Message },
+    method2_manual: { status: res2.Status, message: res2.Message },
+    method3_uppercase: { status: res3.Status, message: res3.Message },
   });
 }
