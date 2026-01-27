@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import { 
+import {
   FileText, Plus, Send, Check, Clock, AlertCircle,
   Edit2, Trash2, RefreshCw, DollarSign, Calendar,
-  User, Building, X, MessageCircle, CheckCircle
+  User, Building, X, MessageCircle, CheckCircle, Receipt
 } from 'lucide-react';
 
 interface Customer {
@@ -57,13 +57,14 @@ interface BillingRequest {
   paid_amount?: number;
   created_at: string;
   customer?: Customer;
+  payment_account_id?: string;
   payment_account?: PaymentAccount;
 }
 
 export default function BillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const url_status = searchParams.get('status') || 'all';
 
   // 更新 URL 參數
@@ -80,12 +81,12 @@ export default function BillingPage() {
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>(url_status);
-  
+
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingBilling, setEditingBilling] = useState<BillingRequest | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  
+
   // Payment confirmation modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [confirmingBilling, setConfirmingBilling] = useState<BillingRequest | null>(null);
@@ -99,7 +100,7 @@ export default function BillingPage() {
 
   // 廠商列表（用於成本選擇）
   const [vendors, setVendors] = useState<Customer[]>([]);
-  
+
   // Form state
   const [form, setForm] = useState({
     customer_id: '',
@@ -121,12 +122,15 @@ export default function BillingPage() {
     cost_amount: ''
   });
 
-  // Payment form
+  // Payment form - 增加發票選項
   const [paymentForm, setPaymentForm] = useState({
     paid_amount: '',
     payment_method: '銀行轉帳',
     payment_note: '',
-    send_notification: true
+    send_notification: true,
+    // 新增發票選項
+    invoice_action: 'auto' as 'manual' | 'auto',
+    invoice_item_name: '服務費'
   });
 
   // 載入請款單列表
@@ -134,10 +138,10 @@ export default function BillingPage() {
     if (!company?.id) return;
     setIsLoading(true);
     try {
-      const url = statusFilter === 'all' 
+      const url = statusFilter === 'all'
         ? `/api/billing?company_id=${company.id}`
         : `/api/billing?company_id=${company.id}&status=${statusFilter}`;
-      
+
       const response = await fetch(url);
       const result = await response.json();
       if (result.data) {
@@ -191,8 +195,8 @@ export default function BillingPage() {
       const result = await response.json();
       if (result.data) {
         // 篩選出外部廠商（不含內部人員）
-        setVendors(result.data.filter((c: Customer) => 
-          (c.customer_type === 'vendor' || c.customer_type === 'both') && 
+        setVendors(result.data.filter((c: Customer) =>
+          (c.customer_type === 'vendor' || c.customer_type === 'both') &&
           !c.is_internal
         ));
       }
@@ -329,7 +333,7 @@ export default function BillingPage() {
       alert('請填寫必要欄位');
       return;
     }
-    
+
     setIsSaving(true);
     try {
       const url = '/api/billing';
@@ -371,7 +375,7 @@ export default function BillingPage() {
 
     // 取得收款帳戶資訊
     const account = paymentAccounts.find(a => a.id === billing.payment_account_id);
-    const accountInfo = account 
+    const accountInfo = account
       ? `${account.bank_name} ${account.branch_name || ''}\n帳號：${account.account_number}\n戶名：${account.account_name}`
       : '（請設定收款帳戶）';
 
@@ -400,15 +404,15 @@ ${accountInfo}
   // 確認發送通知
   const handleConfirmSend = async () => {
     if (!previewBilling) return;
-    
+
     setIsSending(true);
     try {
       const response = await fetch('/api/billing/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           billing_id: previewBilling.id,
-          custom_message: previewMessage 
+          custom_message: previewMessage
         })
       });
       const result = await response.json();
@@ -430,56 +434,108 @@ ${accountInfo}
     }
   };
 
-  // 開啟確認收款 Modal
+  // 開啟確認收款 Modal - 更新預設值
   const openPaymentModal = (billing: BillingRequest) => {
     setConfirmingBilling(billing);
     setPaymentForm({
       paid_amount: billing.total_amount.toString(),
       payment_method: '銀行轉帳',
       payment_note: '',
-      send_notification: true
+      send_notification: true,
+      // 新增發票選項預設值
+      invoice_action: 'auto',
+      invoice_item_name: '服務費'
     });
     setShowPaymentModal(true);
   };
 
-  // 確認收款
+  // 確認收款 - 增加自動開發票邏輯
   const handleConfirmPayment = async () => {
     if (!confirmingBilling || !paymentForm.paid_amount) return;
 
     setIsConfirming(true);
     try {
+      // 1. 先確認收款（原本的邏輯）
       const response = await fetch('/api/billing/confirm-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           billing_id: confirmingBilling.id,
-          ...paymentForm
+          paid_amount: paymentForm.paid_amount,
+          payment_method: paymentForm.payment_method,
+          payment_note: paymentForm.payment_note,
+          send_notification: paymentForm.send_notification
         })
       });
       const result = await response.json();
 
       if (result.success) {
-        setShowPaymentModal(false);
-        loadBillings();
-        
         // 組合提示訊息
         let message = '✅ 收款確認完成！\n\n';
         message += '📝 已自動建立收入記錄\n';
-        
+
         if (result.data?.has_cost) {
           message += '📋 已建立應付款項提醒（外包成本）\n';
         }
-        
+
         if (result.data?.notification_sent) {
           message += '📱 已發送收款通知給客戶\n';
         }
 
-        alert(message);
+        // 2. 根據選擇處理發票
+        if (paymentForm.invoice_action === 'auto') {
+          // 自動開發票
+          try {
+            // 取得客戶資料
+            const customer = customers.find(c => c.id === confirmingBilling.customer_id);
 
-        // 詢問是否要開發票
-        if (confirm('是否要為此筆收款開立發票？\n\n點「確定」前往電子發票頁面')) {
-          // 導向發票頁面，帶入請款單資訊
-          window.location.href = `/dashboard/invoices?billing_id=${confirmingBilling.id}`;
+            const invoiceResponse = await fetch('/api/invoices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                company_id: company?.id,
+                billing_request_id: confirmingBilling.id,
+                invoice_type: customer?.tax_id ? 'B2B' : 'B2C',
+                customer_id: confirmingBilling.customer_id || null,
+                buyer_name: confirmingBilling.customer_name,
+                buyer_tax_id: customer?.tax_id || '',
+                buyer_email: confirmingBilling.customer_email || '',
+                items: [{
+                  name: paymentForm.invoice_item_name || '服務費',
+                  quantity: 1,
+                  unit: '式',
+                  price: parseFloat(paymentForm.paid_amount),
+                }],
+                issue_to_ezpay: true,
+              })
+            });
+            const invoiceResult = await invoiceResponse.json();
+
+            if (invoiceResult.success) {
+              message += `🧾 發票已開立：${invoiceResult.data?.invoice_number || '成功'}\n`;
+              message += '📤 已自動發送發票通知\n';
+            } else {
+              message += `⚠️ 發票開立失敗：${invoiceResult.error}\n`;
+              message += '請至發票頁面手動開立\n';
+            }
+          } catch (invoiceError) {
+            console.error('Auto invoice error:', invoiceError);
+            message += '⚠️ 發票開立失敗，請至發票頁面手動開立\n';
+          }
+
+          alert(message);
+          setShowPaymentModal(false);
+          loadBillings();
+
+        } else {
+          // 手動開發票 - 跳轉
+          alert(message);
+          setShowPaymentModal(false);
+          loadBillings();
+
+          if (confirm('是否要前往開立發票？')) {
+            window.location.href = `/dashboard/invoices?billing_id=${confirmingBilling.id}`;
+          }
         }
       } else {
         alert(result.error || '確認收款失敗');
@@ -599,11 +655,10 @@ ${accountInfo}
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-sm ${
-                  statusFilter === status
+                className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === status
                     ? 'bg-brand-primary-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {status === 'all' ? '全部' : getStatusText(status)}
               </button>
@@ -813,7 +868,7 @@ ${accountInfo}
                   <input
                     type="text"
                     value={form.customer_name}
-                    onChange={(e) => setForm({...form, customer_name: e.target.value})}
+                    onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
                     placeholder="或手動輸入客戶名稱"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 mt-2"
                   />
@@ -836,7 +891,7 @@ ${accountInfo}
                 <input
                   type="text"
                   value={form.title}
-                  onChange={(e) => setForm({...form, title: e.target.value})}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="例：1月份網站維護服務"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
@@ -848,7 +903,7 @@ ${accountInfo}
                 <input
                   type="month"
                   value={form.billing_month}
-                  onChange={(e) => setForm({...form, billing_month: e.target.value})}
+                  onChange={(e) => setForm({ ...form, billing_month: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
@@ -860,7 +915,7 @@ ${accountInfo}
                   <input
                     type="number"
                     value={form.amount}
-                    onChange={(e) => setForm({...form, amount: e.target.value.replace(/^0+(?=\d)/, "")})}
+                    onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/^0+(?=\d)/, "") })}
                     placeholder="0"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
@@ -873,7 +928,7 @@ ${accountInfo}
                 <input
                   type="date"
                   value={form.due_date}
-                  onChange={(e) => setForm({...form, due_date: e.target.value})}
+                  onChange={(e) => setForm({ ...form, due_date: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
@@ -883,7 +938,7 @@ ${accountInfo}
                 <label className="block text-sm font-medium text-gray-700 mb-1">收款帳戶</label>
                 <select
                   value={form.payment_account_id}
-                  onChange={(e) => setForm({...form, payment_account_id: e.target.value})}
+                  onChange={(e) => setForm({ ...form, payment_account_id: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 >
                   <option value="">選擇收款帳戶...</option>
@@ -920,7 +975,7 @@ ${accountInfo}
                     <input
                       type="text"
                       value={form.cost_vendor_name}
-                      onChange={(e) => setForm({...form, cost_vendor_name: e.target.value})}
+                      onChange={(e) => setForm({ ...form, cost_vendor_name: e.target.value })}
                       placeholder="或直接輸入廠商名稱"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 mt-2"
                     />
@@ -930,7 +985,7 @@ ${accountInfo}
                     <input
                       type="number"
                       value={form.cost_amount}
-                      onChange={(e) => setForm({...form, cost_amount: e.target.value.replace(/^0+(?=\d)/, "")})}
+                      onChange={(e) => setForm({ ...form, cost_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
                       placeholder="0"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                     />
@@ -959,7 +1014,7 @@ ${accountInfo}
                 <label className="block text-sm font-medium text-gray-700 mb-1">備註說明</label>
                 <textarea
                   value={form.description}
-                  onChange={(e) => setForm({...form, description: e.target.value})}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="選填"
                   rows={2}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
@@ -988,10 +1043,10 @@ ${accountInfo}
         </div>
       )}
 
-      {/* Payment Confirmation Modal */}
+      {/* Payment Confirmation Modal - 新增發票選項 */}
       {showPaymentModal && confirmingBilling && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">確認收款</h3>
               <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -1016,7 +1071,7 @@ ${accountInfo}
                 <input
                   type="number"
                   value={paymentForm.paid_amount}
-                  onChange={(e) => setPaymentForm({...paymentForm, paid_amount: e.target.value.replace(/^0+(?=\d)/, "")})}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paid_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
@@ -1025,7 +1080,7 @@ ${accountInfo}
                 <label className="block text-sm font-medium text-gray-700 mb-1">付款方式</label>
                 <select
                   value={paymentForm.payment_method}
-                  onChange={(e) => setPaymentForm({...paymentForm, payment_method: e.target.value})}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 >
                   <option value="銀行轉帳">銀行轉帳</option>
@@ -1041,23 +1096,86 @@ ${accountInfo}
                 <input
                   type="text"
                   value={paymentForm.payment_note}
-                  onChange={(e) => setPaymentForm({...paymentForm, payment_note: e.target.value})}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_note: e.target.value })}
                   placeholder="選填"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
 
-              {confirmingBilling.customer_line_id && (
+              {(confirmingBilling.customer_line_id || confirmingBilling.customer_line_group_id) && (
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={paymentForm.send_notification}
-                    onChange={(e) => setPaymentForm({...paymentForm, send_notification: e.target.checked})}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, send_notification: e.target.checked })}
                     className="rounded text-brand-primary-600"
                   />
                   <span className="text-sm">發送收款確認通知給客戶</span>
                 </label>
               )}
+
+              {/* 發票開立選項 - 新增區塊 */}
+              <div className="border-t pt-4 mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                  <Receipt className="w-4 h-4" />
+                  開立發票
+                </label>
+
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'auto'
+                      ? 'border-brand-primary-500 bg-brand-primary-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                    }`}>
+                    <input
+                      type="radio"
+                      name="invoice_action"
+                      value="auto"
+                      checked={paymentForm.invoice_action === 'auto'}
+                      onChange={() => setPaymentForm({ ...paymentForm, invoice_action: 'auto' })}
+                      className="mt-0.5 text-brand-primary-600"
+                    />
+                    <div>
+                      <span className="text-sm font-medium">立即自動開立</span>
+                      <p className="text-xs text-gray-500">確認收款後自動開發票並發送通知</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'manual'
+                      ? 'border-brand-primary-500 bg-brand-primary-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                    }`}>
+                    <input
+                      type="radio"
+                      name="invoice_action"
+                      value="manual"
+                      checked={paymentForm.invoice_action === 'manual'}
+                      onChange={() => setPaymentForm({ ...paymentForm, invoice_action: 'manual' })}
+                      className="mt-0.5 text-brand-primary-600"
+                    />
+                    <div>
+                      <span className="text-sm font-medium">稍後手動開立</span>
+                      <p className="text-xs text-gray-500">跳轉到發票頁面自行開立</p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* 自動開立時顯示品項輸入 */}
+                {paymentForm.invoice_action === 'auto' && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">發票品項</label>
+                    <input
+                      type="text"
+                      value={paymentForm.invoice_item_name}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, invoice_item_name: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                      placeholder="服務費"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      預設為「服務費」，可依需求修改（如：網站架設費）
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -1074,7 +1192,7 @@ ${accountInfo}
                 className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isConfirming && <RefreshCw className="w-4 h-4 animate-spin" />}
-                {isConfirming ? '處理中...' : '確認收款'}
+                {isConfirming ? '處理中...' : paymentForm.invoice_action === 'auto' ? '確認收款並開發票' : '確認收款'}
               </button>
             </div>
           </div>

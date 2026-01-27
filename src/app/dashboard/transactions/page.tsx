@@ -52,7 +52,7 @@ const dateRangePresets = [
 export default function TransactionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const {
     transactions,
     bankAccounts,
@@ -62,7 +62,7 @@ export default function TransactionsPage() {
     updateTransaction,
     deleteTransaction,
   } = useDataStore();
-  
+
   const { canEdit } = useAuthStore();
 
   // 從 URL 讀取篩選參數
@@ -89,7 +89,7 @@ export default function TransactionsPage() {
     if (end) params.set('end', end);
     router.replace(`/dashboard/transactions?${params.toString()}`, { scroll: false });
   };
-  
+
   const [formData, setFormData] = useState({
     transaction_date: format(new Date(), 'yyyy-MM-dd'),
     transaction_type: 'expense' as TransactionType,
@@ -207,11 +207,11 @@ export default function TransactionsPage() {
     const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    
-    const fileName = dateRange.start && dateRange.end 
+
+    const fileName = dateRange.start && dateRange.end
       ? `交易記錄_${dateRange.start}_${dateRange.end}.csv`
       : `交易記錄_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    
+
     link.setAttribute('href', url);
     link.setAttribute('download', fileName);
     link.style.visibility = 'hidden';
@@ -222,7 +222,7 @@ export default function TransactionsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (editingTransaction) {
       // 編輯模式
       await updateTransaction(editingTransaction, formData);
@@ -230,7 +230,7 @@ export default function TransactionsPage() {
       // 新增模式
       await addTransaction(formData);
     }
-    
+
     setShowModal(false);
     setEditingTransaction(null);
     setFormData({
@@ -293,7 +293,7 @@ export default function TransactionsPage() {
   };
 
   const expenseCategories = accountCategories.filter(c => c.type === 'expense' && c.is_active);
-  const revenueCategories = accountCategories.filter(c => c.type === 'income' && c.is_active);
+  const revenueCategories = accountCategories.filter(c => c.type === 'revenue' && c.is_active);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -304,8 +304,8 @@ export default function TransactionsPage() {
           <p className="text-gray-500 mt-1">記錄所有收入、支出與轉帳</p>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={exportToCSV} 
+          <button
+            onClick={exportToCSV}
             className="btn-secondary flex items-center gap-2"
             disabled={filteredTransactions.length === 0}
           >
@@ -333,11 +333,10 @@ export default function TransactionsPage() {
               <button
                 key={idx}
                 onClick={() => handleDateRangeChange(preset, preset.label)}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${isActive
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 {preset.label}
               </button>
@@ -422,11 +421,10 @@ export default function TransactionsPage() {
               <button
                 key={type}
                 onClick={() => handleFilterChange(type)}
-                className={`px-3 py-2 text-sm rounded-lg transition-colors ${
-                  filterType === type
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`px-3 py-2 text-sm rounded-lg transition-colors ${filterType === type
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 {type === 'all' ? '全部' : transactionTypeConfig[type].label}
               </button>
@@ -461,11 +459,11 @@ export default function TransactionsPage() {
                 paginatedTransactions.map(t => {
                   const config = transactionTypeConfig[t.transaction_type];
                   const Icon = config.icon;
-                  const account = bankAccounts.find(a => 
+                  const account = bankAccounts.find(a =>
                     a.id === t.bank_account_id || a.id === t.from_account_id || a.id === t.to_account_id
                   );
                   const customer = customers.find(c => c.id === t.customer_id);
-                  
+
                   return (
                     <tr key={t.id}>
                       <td>
@@ -572,11 +570,10 @@ export default function TransactionsPage() {
                     <button
                       key={page}
                       onClick={() => setCurrentPage(page)}
-                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                        currentPage === page
-                          ? 'bg-blue-600 text-white'
-                          : 'hover:bg-gray-100 text-gray-600'
-                      }`}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${currentPage === page
+                        ? 'bg-blue-600 text-white'
+                        : 'hover:bg-gray-100 text-gray-600'
+                        }`}
                     >
                       {page}
                     </button>
@@ -610,7 +607,7 @@ export default function TransactionsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               {/* Transaction Type */}
               <div>
@@ -624,11 +621,10 @@ export default function TransactionsPage() {
                         key={type}
                         type="button"
                         onClick={() => setFormData({ ...formData, transaction_type: type })}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${
-                          formData.transaction_type === type
-                            ? `${config.bgColor} border-current ${config.color}`
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${formData.transaction_type === type
+                          ? `${config.bgColor} border-current ${config.color}`
+                          : 'border-gray-200 hover:border-gray-300'
+                          }`}
                       >
                         <Icon className={`w-4 h-4 ${formData.transaction_type === type ? config.color : 'text-gray-400'}`} />
                         <span className={formData.transaction_type === type ? config.color : 'text-gray-600'}>
