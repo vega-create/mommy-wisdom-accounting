@@ -177,7 +177,7 @@ export default function HelpPage() {
             <h3 className="font-semibold mb-3">功能模組</h3>
             <nav className="space-y-1">
               <button
-                onClick={() => setSelectedModule('overview')}
+                onClick={() => { setSelectedModule('overview'); updateURL('overview'); }}
                 className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 ${selectedModule === 'overview' ? 'bg-brand-primary-50 text-brand-primary-600' : 'hover:bg-gray-50'}`}
               >
                 <Workflow className="w-5 h-5" /> 系統總覽
@@ -185,7 +185,7 @@ export default function HelpPage() {
               {modules.map(m => (
                 <button
                   key={m.id}
-                  onClick={() => setSelectedModule(m.id)}
+                  onClick={() => { setSelectedModule(m.id); updateURL(m.id); }}
                   className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 ${selectedModule === m.id ? 'bg-brand-primary-50 text-brand-primary-600' : 'hover:bg-gray-50'}`}
                 >
                   {m.icon} {m.name}

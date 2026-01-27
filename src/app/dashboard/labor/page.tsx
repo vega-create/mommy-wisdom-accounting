@@ -306,7 +306,7 @@ export default function LaborReportsPage() {
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); updateURL(e.target.value, staffTypeFilter, dateFrom, dateTo); }}
               className="input-field w-full md:w-40"
             >
               <option value="all">全部狀態</option>
@@ -319,7 +319,7 @@ export default function LaborReportsPage() {
 
             <select
               value={staffTypeFilter}
-              onChange={(e) => setStaffTypeFilter(e.target.value)}
+              onChange={(e) => { setStaffTypeFilter(e.target.value); updateURL(statusFilter, e.target.value, dateFrom, dateTo); }}
               className="input-field w-full md:w-40"
             >
               <option value="all">全部人員</option>
@@ -346,7 +346,7 @@ export default function LaborReportsPage() {
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => { setDateFrom(e.target.value); updateURL(statusFilter, staffTypeFilter, e.target.value, dateTo); }}
               className="input-field w-full md:w-40"
               placeholder="起始日期"
             />
@@ -354,13 +354,13 @@ export default function LaborReportsPage() {
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => { setDateTo(e.target.value); updateURL(statusFilter, staffTypeFilter, dateFrom, e.target.value); }}
               className="input-field w-full md:w-40"
               placeholder="結束日期"
             />
             {(dateFrom || dateTo) && (
               <button
-                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                onClick={() => { setDateFrom(''); setDateTo(''); updateURL(statusFilter, staffTypeFilter, '', ''); }}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
                 清除日期

@@ -250,19 +250,16 @@ export default function IncomeStatementPage() {
     const now = new Date();
     switch (type) {
       case 'month':
-        setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
-        setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+        const s = format(startOfMonth(now), 'yyyy-MM-dd'); const e = format(endOfMonth(now), 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
         break;
       case 'quarter':
         const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
         const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
         const quarterEnd = new Date(now.getFullYear(), quarterMonth + 3, 0);
-        setStartDate(format(quarterStart, 'yyyy-MM-dd'));
-        setEndDate(format(quarterEnd, 'yyyy-MM-dd'));
+        const s = format(quarterStart, 'yyyy-MM-dd'); const e = format(quarterEnd, 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
         break;
       case 'year':
-        setStartDate(format(startOfYear(now), 'yyyy-MM-dd'));
-        setEndDate(format(endOfYear(now), 'yyyy-MM-dd'));
+        const s = format(startOfYear(now), 'yyyy-MM-dd'); const e = format(endOfYear(now), 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
         break;
     }
   };
@@ -295,7 +292,7 @@ export default function IncomeStatementPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); updateURL(e.target.value, endDate); }}
               className="input-field"
             />
           </div>
@@ -304,7 +301,7 @@ export default function IncomeStatementPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); updateURL(startDate, e.target.value); }}
               className="input-field"
             />
           </div>

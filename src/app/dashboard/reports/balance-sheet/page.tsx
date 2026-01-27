@@ -294,12 +294,12 @@ export default function BalanceSheetPage() {
             <input
               type="date"
               value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
+              onChange={(e) => { setReportDate(e.target.value); updateURL(e.target.value); }}
               className="input-field"
             />
           </div>
           <button
-            onClick={() => setReportDate(format(endOfMonth(new Date()), 'yyyy-MM-dd'))}
+            onClick={() => { const d = format(endOfMonth(new Date()), 'yyyy-MM-dd'); setReportDate(d); updateURL(d); }}
             className="btn-secondary"
           >
             本月底

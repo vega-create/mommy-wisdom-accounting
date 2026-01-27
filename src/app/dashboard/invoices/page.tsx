@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { FileText, Plus, Settings, X, Check, Eye, Ban, Trash2 } from 'lucide-react';
@@ -33,6 +34,9 @@ interface InvoiceSettings {
 }
 
 export default function InvoicesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const { company } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);

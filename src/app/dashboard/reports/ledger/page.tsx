@@ -274,7 +274,7 @@ export default function LedgerPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); updateURL(e.target.value, endDate, selectedAccount); }}
               className="input-field"
             />
           </div>
@@ -283,7 +283,7 @@ export default function LedgerPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); updateURL(startDate, e.target.value, selectedAccount); }}
               className="input-field"
             />
           </div>
@@ -291,7 +291,7 @@ export default function LedgerPage() {
             <label className="input-label">會計科目</label>
             <select
               value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
+              onChange={(e) => { setSelectedAccount(e.target.value); updateURL(startDate, endDate, e.target.value); }}
               className="input-field"
             >
               <option value="all">全部科目</option>
