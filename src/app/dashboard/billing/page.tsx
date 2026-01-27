@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { 
   FileText, Plus, Send, Check, Clock, AlertCircle,
@@ -60,12 +61,25 @@ interface BillingRequest {
 }
 
 export default function BillingPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_status = searchParams.get('status') || 'all';
+
+  // 更新 URL 參數
+  const updateURL = (statusFilter: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    router.replace(`/dashboard/billing?${params.toString()}`, { scroll: false });
+  };
+
+
   const { company } = useAuthStore();
   const [billings, setBillings] = useState<BillingRequest[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(url_status);
   
   // Modal states
   const [showModal, setShowModal] = useState(false);

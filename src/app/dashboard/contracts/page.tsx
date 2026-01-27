@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import Link from 'next/link';
 
@@ -14,12 +15,29 @@ const statusColors: Record<string, string> = {
 };
 
 export default function ContractsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_status = searchParams.get('status') || 'all';
+  const url_from = searchParams.get('from') || '';
+  const url_to = searchParams.get('to') || '';
+
+  // 更新 URL 參數
+  const updateURL = (statusFilter: string, dateFrom: string, dateTo: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    router.replace(`/dashboard/contracts?${params.toString()}`, { scroll: false });
+  };
+
+
   const { company } = useAuthStore();
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState(url_from);
+  const [dateTo, setDateTo] = useState(url_to);
+  const [statusFilter, setStatusFilter] = useState(url_status);
 
   useEffect(() => {
     if (company?.id) fetchContracts();
@@ -128,7 +146,7 @@ export default function ContractsPage() {
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">狀態：</label>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm">
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); updateURL(e.target.value, dateFrom, dateTo); }} className="border rounded-lg px-3 py-1.5 text-sm">
               <option value="all">全部</option>
               <option value="draft">草稿</option>
               <option value="pending_signature">待簽署</option>

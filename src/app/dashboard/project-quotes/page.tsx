@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, X, Download } from 'lucide-react';
 
@@ -29,10 +30,23 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
 };
 
 export default function ProjectQuotesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_status = searchParams.get('status') || 'all';
+
+  // 更新 URL 參數
+  const updateURL = (statusFilter: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    router.replace(`/dashboard/project-quotes?${params.toString()}`, { scroll: false });
+  };
+
+
   const { company } = useAuthStore();
   const [quotes, setQuotes] = useState<ProjectQuote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(url_status);
   const [searchText, setSearchText] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingQuote, setEditingQuote] = useState<ProjectQuote | null>(null);
@@ -226,7 +240,7 @@ export default function ProjectQuotesPage() {
             {['all', 'discussing', 'in_progress', 'completed', 'contract_changed', 'not_cooperated'].map(s => (
               <button
                 key={s}
-                onClick={() => setStatusFilter(s)}
+                onClick={() => { setStatusFilter(s); updateURL(s); }}
                 className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === s ? 'bg-brand-primary-500 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
               >
                 {s === 'all' ? '全部' : statusConfig[s]?.label}

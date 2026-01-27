@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { defaultAccountCategories } from '@/data/accounts';
 import { 
   BookOpen, ChevronDown, ChevronRight, 
@@ -48,8 +49,21 @@ interface GroupedAccounts {
 }
 
 export default function ChartOfAccountsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_type = searchParams.get('type') || 'all';
+
+  // 更新 URL 參數
+  const updateURL = (filterType: string) => {
+    const params = new URLSearchParams();
+    if (filterType) params.set('type', filterType);
+    router.replace(`/dashboard/chart-of-accounts?${params.toString()}`, { scroll: false });
+  };
+
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<AccountType | 'all'>('all');
+  const [filterType, setFilterType] = useState<AccountType | 'all'>(url_type as AccountType | 'all');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['1', '2', '3', '4', '5', '6']));
   const [expandedSubGroups, setExpandedSubGroups] = useState<Set<string>>(new Set());
 
@@ -168,7 +182,7 @@ export default function ChartOfAccountsPage() {
         {Object.entries(accountTypeLabels).map(([type, label]) => (
           <button
             key={type}
-            onClick={() => setFilterType(filterType === type ? 'all' : type as AccountType)}
+            onClick={() => { setFilterType(filterType === type ? 'all' : type as AccountType); updateURL(filterType === type ? 'all' : type as AccountType); }}
             className={`stats-card cursor-pointer transition-all ${
               filterType === type ? 'ring-2 ring-blue-500' : ''
             }`}

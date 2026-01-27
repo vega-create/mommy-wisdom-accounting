@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
@@ -26,11 +27,28 @@ const voucherStatusLabels: Record<VoucherStatus, string> = {
 };
 
 export default function JournalPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_start = searchParams.get('start') || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+  const url_end = searchParams.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
+  const url_status = searchParams.get('status') || 'approved';
+
+  // 更新 URL 參數
+  const updateURL = (startDate: string, endDate: string, filterStatus: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start', startDate);
+    if (endDate) params.set('end', endDate);
+    if (filterStatus) params.set('status', filterStatus);
+    router.replace(`/dashboard/reports/journal?${params.toString()}`, { scroll: false });
+  };
+
+
   const { vouchers, voucherItems } = useDataStore();
   const { company } = useAuthStore();
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [filterStatus, setFilterStatus] = useState<VoucherStatus | 'all'>('approved');
+  const [startDate, setStartDate] = useState(url_start);
+  const [endDate, setEndDate] = useState(url_end);
+  const [filterStatus, setFilterStatus] = useState<VoucherStatus | 'all'>(url_status as VoucherStatus | 'all');
 
   // 取得公司憑證並按日期排序
   const journalEntries = useMemo(() => {
@@ -130,7 +148,7 @@ export default function JournalPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); updateURL(e.target.value, endDate, filterStatus); }}
               className="input-field"
             />
           </div>
@@ -139,7 +157,7 @@ export default function JournalPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); updateURL(startDate, e.target.value, filterStatus); }}
               className="input-field"
             />
           </div>
@@ -147,7 +165,7 @@ export default function JournalPage() {
             <label className="input-label">憑證狀態</label>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as VoucherStatus | 'all')}
+              onChange={(e) => { setFilterStatus(e.target.value as VoucherStatus | 'all'); updateURL(startDate, endDate, e.target.value); }}
               className="input-field"
             >
               <option value="all">全部</option>
