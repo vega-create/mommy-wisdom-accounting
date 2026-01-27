@@ -8,27 +8,55 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
+    const action = searchParams.get('action');
     const status = searchParams.get('status');
     const projectType = searchParams.get('project_type');
+    const clientName = searchParams.get('client_name');
     const search = searchParams.get('search');
 
     if (!companyId) {
       return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
     }
 
+    // 取得客戶列表
+    if (action === 'get_clients') {
+      const { data, error } = await supabase
+        .from('acct_project_quotes')
+        .select('client_name')
+        .eq('company_id', companyId)
+        .order('client_name');
+
+      if (error) throw error;
+
+      const clientNames: string[] = [];
+      if (data) {
+        data.forEach(d => {
+          if (d.client_name && !clientNames.includes(d.client_name)) {
+            clientNames.push(d.client_name);
+          }
+        });
+      }
+      return NextResponse.json({ data: clientNames });
+    }
+
+    // 取得報價列表
     let query = supabase
       .from('acct_project_quotes')
       .select('*')
       .eq('company_id', companyId)
+      .order('client_name', { ascending: true })
       .order('quote_date', { ascending: false });
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
     }
 
-    // 新增：專案類型篩選
     if (projectType && projectType !== 'all') {
       query = query.eq('project_type', projectType);
+    }
+
+    if (clientName && clientName !== 'all') {
+      query = query.eq('client_name', clientName);
     }
 
     if (search) {
@@ -48,32 +76,45 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { company_id, quote_date, client_name, project_item, vendor_name, cost_price, cost_note, selling_price, selling_note, status, project_type, notes } = body;
+    const {
+      company_id, quote_date, client_name, project_item, vendor_name,
+      cost_price, cost_note, selling_price, selling_note,
+      status, project_type, notes,
+      billing_cycle, next_billing_date, show_subtotal
+    } = body;
 
     if (!company_id || !client_name || !project_item) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
     }
 
+    const insertData: Record<string, unknown> = {
+      company_id,
+      quote_date: quote_date || new Date().toISOString().split('T')[0],
+      client_name,
+      project_item,
+      vendor_name: vendor_name || null,
+      cost_price: cost_price ? parseFloat(cost_price) : null,
+      cost_note: cost_note || null,
+      selling_price: selling_price ? parseFloat(selling_price) : null,
+      selling_note: selling_note || null,
+      status: status || 'discussing',
+      project_type: project_type || 'quote',
+      notes: notes || null,
+      billing_cycle: billing_cycle || null,
+      next_billing_date: next_billing_date || null,
+      show_subtotal: show_subtotal === true
+    };
+
     const { data, error } = await supabase
       .from('acct_project_quotes')
-      .insert({
-        company_id,
-        quote_date: quote_date || new Date().toISOString().split('T')[0],
-        client_name,
-        project_item,
-        vendor_name: vendor_name || null,
-        cost_price: cost_price ? parseFloat(cost_price) : null,
-        cost_note: cost_note || null,
-        selling_price: selling_price ? parseFloat(selling_price) : null,
-        selling_note: selling_note || null,
-        status: status || 'discussing',
-        project_type: project_type || 'quote',
-        notes: notes || null
-      })
+      .insert(insertData)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Insert error:', error);
+      throw error;
+    }
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Error creating project quote:', error);
@@ -91,10 +132,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     }
 
+    // 處理數字欄位
     if (updates.cost_price === '') updates.cost_price = null;
     if (updates.selling_price === '') updates.selling_price = null;
     if (updates.cost_price) updates.cost_price = parseFloat(updates.cost_price);
     if (updates.selling_price) updates.selling_price = parseFloat(updates.selling_price);
+
+    // 處理可選欄位
+    if (updates.next_billing_date === '') updates.next_billing_date = null;
+    if (updates.billing_cycle === '') updates.billing_cycle = null;
 
     updates.updated_at = new Date().toISOString();
 

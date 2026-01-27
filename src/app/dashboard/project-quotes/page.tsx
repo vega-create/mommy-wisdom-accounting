@@ -30,8 +30,6 @@ interface GroupedQuotes {
   totalCost: number;
   totalSelling: number;
   totalProfit: number;
-  billing_cycle?: string;
-  next_billing_date?: string;
   show_subtotal?: boolean;
 }
 
@@ -64,7 +62,6 @@ export default function ProjectQuotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // URL 參數
   const url_status = searchParams.get('status') || 'all';
   const url_type = searchParams.get('type') || 'all';
   const url_client = searchParams.get('client') || 'all';
@@ -90,7 +87,7 @@ export default function ProjectQuotesPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
 
-  const [form, setForm] = useState({
+  const defaultForm = {
     quote_date: new Date().toISOString().split('T')[0],
     client_name: '',
     project_item: '',
@@ -101,11 +98,13 @@ export default function ProjectQuotesPage() {
     selling_note: '',
     status: 'discussing',
     project_type: 'quote',
-    billing_cycle: 'yearly',
+    billing_cycle: '',
     next_billing_date: '',
     show_subtotal: false,
     notes: ''
-  });
+  };
+
+  const [form, setForm] = useState(defaultForm);
 
   useEffect(() => {
     if (company?.id) {
@@ -114,7 +113,6 @@ export default function ProjectQuotesPage() {
     }
   }, [company?.id, statusFilter, typeFilter, clientFilter]);
 
-  // 初始化時展開所有客戶
   useEffect(() => {
     const allClients = new Set(quotes.map(q => q.client_name));
     setExpandedClients(allClients);
@@ -143,11 +141,11 @@ export default function ProjectQuotesPage() {
   const loadClientList = async () => {
     if (!company?.id) return;
     try {
-      const res = await fetch('/api/project-quotes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_clients', company_id: company.id })
+      const params = new URLSearchParams({
+        company_id: company.id,
+        action: 'get_clients'
       });
+      const res = await fetch(`/api/project-quotes?${params}`);
       const result = await res.json();
       if (result.data) setClientList(result.data);
     } catch (e) {
@@ -185,20 +183,8 @@ export default function ProjectQuotesPage() {
   const openAddModal = (presetClient?: string) => {
     setEditingQuote(null);
     setForm({
-      quote_date: new Date().toISOString().split('T')[0],
-      client_name: presetClient || '',
-      project_item: '',
-      vendor_name: '',
-      cost_price: '',
-      cost_note: '',
-      selling_price: '',
-      selling_note: '',
-      status: 'discussing',
-      project_type: 'quote',
-      billing_cycle: 'yearly',
-      next_billing_date: '',
-      show_subtotal: false,
-      notes: ''
+      ...defaultForm,
+      client_name: presetClient || ''
     });
     setShowModal(true);
   };
@@ -206,17 +192,17 @@ export default function ProjectQuotesPage() {
   const openEditModal = (quote: ProjectQuote) => {
     setEditingQuote(quote);
     setForm({
-      quote_date: quote.quote_date,
-      client_name: quote.client_name,
-      project_item: quote.project_item,
+      quote_date: quote.quote_date || '',
+      client_name: quote.client_name || '',
+      project_item: quote.project_item || '',
       vendor_name: quote.vendor_name || '',
       cost_price: quote.cost_price?.toString() || '',
       cost_note: quote.cost_note || '',
       selling_price: quote.selling_price?.toString() || '',
       selling_note: quote.selling_note || '',
-      status: quote.status,
+      status: quote.status || 'discussing',
       project_type: quote.project_type || 'quote',
-      billing_cycle: quote.billing_cycle || 'yearly',
+      billing_cycle: quote.billing_cycle || '',
       next_billing_date: quote.next_billing_date || '',
       show_subtotal: quote.show_subtotal || false,
       notes: quote.notes || ''
@@ -232,7 +218,9 @@ export default function ProjectQuotesPage() {
     setIsSaving(true);
     try {
       const method = editingQuote ? 'PUT' : 'POST';
-      const body = editingQuote ? { id: editingQuote.id, ...form } : { company_id: company.id, ...form };
+      const body = editingQuote
+        ? { id: editingQuote.id, ...form }
+        : { company_id: company.id, ...form };
 
       const res = await fetch('/api/project-quotes', {
         method,
@@ -248,6 +236,7 @@ export default function ProjectQuotesPage() {
         alert(result.error || '儲存失敗');
       }
     } catch (e) {
+      console.error('Save error:', e);
       alert('儲存失敗');
     } finally {
       setIsSaving(false);
@@ -268,7 +257,6 @@ export default function ProjectQuotesPage() {
     }
   };
 
-  // 依客戶分組
   const groupedQuotes: GroupedQuotes[] = Object.values(
     quotes.reduce((acc, quote) => {
       const key = quote.client_name;
@@ -279,20 +267,13 @@ export default function ProjectQuotesPage() {
           totalCost: 0,
           totalSelling: 0,
           totalProfit: 0,
-          billing_cycle: quote.billing_cycle,
-          next_billing_date: quote.next_billing_date,
-          show_subtotal: quote.show_subtotal
+          show_subtotal: false
         };
       }
       acc[key].items.push(quote);
       acc[key].totalCost += quote.cost_price || 0;
       acc[key].totalSelling += quote.selling_price || 0;
       acc[key].totalProfit += (quote.selling_price || 0) - (quote.cost_price || 0);
-      // 取最近的請款資訊
-      if (quote.next_billing_date) {
-        acc[key].next_billing_date = quote.next_billing_date;
-        acc[key].billing_cycle = quote.billing_cycle;
-      }
       if (quote.show_subtotal) {
         acc[key].show_subtotal = true;
       }
@@ -312,7 +293,7 @@ export default function ProjectQuotesPage() {
       q.selling_price?.toString() || '',
       ((q.selling_price || 0) - (q.cost_price || 0)).toString(),
       statusConfig[q.status]?.label || q.status,
-      billingCycleConfig[q.billing_cycle || 'yearly'] || '',
+      billingCycleConfig[q.billing_cycle || ''] || '',
       q.next_billing_date || ''
     ]);
     const csv = '\uFEFF' + [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -324,19 +305,16 @@ export default function ProjectQuotesPage() {
     a.click();
   };
 
-  // 統計
   const stats = {
     total: quotes.length,
     clients: groupedQuotes.length,
     inProgress: quotes.filter(q => q.status === 'in_progress').length,
-    completed: quotes.filter(q => q.status === 'completed').length,
     totalRevenue: quotes.filter(q => q.status === 'completed').reduce((sum, q) => sum + (q.selling_price || 0), 0),
     totalCost: quotes.filter(q => q.status === 'completed').reduce((sum, q) => sum + (q.cost_price || 0), 0)
   };
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">專案成本報價管理</h1>
@@ -352,7 +330,6 @@ export default function ProjectQuotesPage() {
         </div>
       </div>
 
-      {/* 統計卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg shadow-sm border">
           <p className="text-sm text-gray-500">客戶數</p>
@@ -376,10 +353,8 @@ export default function ProjectQuotesPage() {
         </div>
       </div>
 
-      {/* 篩選區 */}
       <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
         <div className="flex flex-wrap gap-4 items-center">
-          {/* 狀態篩選 */}
           <div className="flex gap-2 flex-wrap">
             {['all', 'discussing', 'in_progress', 'completed', 'contract_changed', 'not_cooperated'].map(s => (
               <button
@@ -392,13 +367,12 @@ export default function ProjectQuotesPage() {
             ))}
           </div>
 
-          {/* 類型篩選 */}
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <select
               value={typeFilter}
               onChange={(e) => handleTypeFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-primary-500"
+              className="px-3 py-1.5 border rounded-lg text-sm bg-white"
             >
               <option value="all">所有類型</option>
               {Object.entries(projectTypeConfig).map(([k, v]) => (
@@ -407,12 +381,11 @@ export default function ProjectQuotesPage() {
             </select>
           </div>
 
-          {/* 客戶篩選 */}
           <div className="flex items-center gap-2">
             <select
               value={clientFilter}
               onChange={(e) => handleClientFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-primary-500"
+              className="px-3 py-1.5 border rounded-lg text-sm bg-white"
             >
               <option value="all">所有客戶</option>
               {clientList.map(client => (
@@ -421,7 +394,6 @@ export default function ProjectQuotesPage() {
             </select>
           </div>
 
-          {/* 搜尋 */}
           <div className="flex gap-2 flex-1 max-w-md">
             <input
               type="text"
@@ -441,7 +413,6 @@ export default function ProjectQuotesPage() {
         </div>
       </div>
 
-      {/* 依客戶分組列表 */}
       <div className="space-y-4">
         {groupedQuotes.length === 0 && !isLoading && (
           <div className="bg-white rounded-lg shadow-sm border p-12 text-center text-gray-500">
@@ -455,7 +426,6 @@ export default function ProjectQuotesPage() {
 
           return (
             <div key={group.client_name} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-              {/* 客戶標題列 */}
               <div
                 className="px-4 py-3 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100"
                 onClick={() => toggleClient(group.client_name)}
@@ -465,25 +435,14 @@ export default function ProjectQuotesPage() {
                   <span className="font-semibold text-gray-900">{group.client_name}</span>
                   <span className="text-sm text-gray-500">({group.items.length} 個品項)</span>
                 </div>
-                <div className="flex items-center gap-4 text-sm">
-                  {group.next_billing_date && (
-                    <div className="flex items-center gap-1 text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      <span>{billingCycleConfig[group.billing_cycle || 'yearly']}</span>
-                      <span className="text-gray-400">|</span>
-                      <span>下次請款：{group.next_billing_date}</span>
-                    </div>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); openAddModal(group.client_name); }}
-                    className="px-2 py-1 text-brand-primary-600 hover:bg-brand-primary-50 rounded"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); openAddModal(group.client_name); }}
+                  className="px-2 py-1 text-brand-primary-600 hover:bg-brand-primary-50 rounded"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
 
-              {/* 品項列表 */}
               {isExpanded && (
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -496,6 +455,7 @@ export default function ProjectQuotesPage() {
                         <th className="px-4 py-2 text-right">成本價</th>
                         <th className="px-4 py-2 text-right">報價</th>
                         <th className="px-4 py-2 text-right">毛利</th>
+                        <th className="px-4 py-2 text-center">請款</th>
                         <th className="px-4 py-2 text-center">狀況</th>
                         <th className="px-4 py-2 text-center">操作</th>
                       </tr>
@@ -503,24 +463,32 @@ export default function ProjectQuotesPage() {
                     <tbody className="divide-y">
                       {group.items.map(quote => {
                         const profit = (quote.selling_price || 0) - (quote.cost_price || 0);
-                        const config = statusConfig[quote.status] || { label: quote.status, color: 'text-gray-600', bg: 'bg-gray-100' };
-                        const typeConfig = projectTypeConfig[quote.project_type || 'quote'] || projectTypeConfig.quote;
+                        const sConfig = statusConfig[quote.status] || { label: quote.status, color: 'text-gray-600', bg: 'bg-gray-100' };
+                        const tConfig = projectTypeConfig[quote.project_type || 'quote'] || projectTypeConfig.quote;
 
                         return (
                           <tr key={quote.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-sm text-gray-600">{quote.quote_date}</td>
                             <td className="px-4 py-3">
-                              <span className={`px-2 py-0.5 rounded-full text-xs ${typeConfig.bg} ${typeConfig.color}`}>{typeConfig.label}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs ${tConfig.bg} ${tConfig.color}`}>{tConfig.label}</span>
                             </td>
                             <td className="px-4 py-3 text-sm font-medium max-w-xs truncate" title={quote.project_item}>{quote.project_item}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{quote.vendor_name || '-'}</td>
                             <td className="px-4 py-3 text-sm text-right text-orange-600">{quote.cost_price ? `$${quote.cost_price.toLocaleString()}` : '-'}</td>
                             <td className="px-4 py-3 text-sm text-right font-medium text-blue-600">{quote.selling_price ? `$${quote.selling_price.toLocaleString()}` : '-'}</td>
                             <td className={`px-4 py-3 text-sm text-right font-medium ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                              {quote.selling_price && quote.cost_price ? `$${profit.toLocaleString()}` : '-'}
+                              {quote.selling_price || quote.cost_price ? `$${profit.toLocaleString()}` : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs">
+                              {quote.billing_cycle || quote.next_billing_date ? (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  {quote.billing_cycle && <span className="text-gray-500">{billingCycleConfig[quote.billing_cycle]}</span>}
+                                  {quote.next_billing_date && <span className="text-purple-600 font-medium">{quote.next_billing_date}</span>}
+                                </div>
+                              ) : '-'}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              <span className={`px-2 py-1 rounded-full text-xs ${config.bg} ${config.color}`}>{config.label}</span>
+                              <span className={`px-2 py-1 rounded-full text-xs ${sConfig.bg} ${sConfig.color}`}>{sConfig.label}</span>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex justify-center gap-1">
@@ -535,14 +503,13 @@ export default function ProjectQuotesPage() {
                           </tr>
                         );
                       })}
-                      {/* 合計列 */}
                       {group.show_subtotal && (
                         <tr className="bg-gray-50 font-medium">
                           <td colSpan={4} className="px-4 py-3 text-right text-gray-600">合計</td>
                           <td className="px-4 py-3 text-right text-orange-600">${group.totalCost.toLocaleString()}</td>
                           <td className="px-4 py-3 text-right text-blue-600">${group.totalSelling.toLocaleString()}</td>
                           <td className={`px-4 py-3 text-right ${group.totalProfit > 0 ? 'text-green-600' : 'text-red-600'}`}>${group.totalProfit.toLocaleString()}</td>
-                          <td colSpan={2}></td>
+                          <td colSpan={3}></td>
                         </tr>
                       )}
                     </tbody>
@@ -554,7 +521,6 @@ export default function ProjectQuotesPage() {
         })}
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -563,7 +529,6 @@ export default function ProjectQuotesPage() {
               <button onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
-              {/* 基本資訊 */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">客戶名稱 *</label>
@@ -610,7 +575,6 @@ export default function ProjectQuotesPage() {
                 <input type="text" value={form.vendor_name} onChange={(e) => setForm({ ...form, vendor_name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="外包廠商名稱" />
               </div>
 
-              {/* 價格 */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">成本價</label>
@@ -622,17 +586,17 @@ export default function ProjectQuotesPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">成本備註</label>
-                <textarea value={form.cost_note} onChange={(e) => setForm({ ...form, cost_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="成本細節說明..." />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">成本備註</label>
+                  <input type="text" value={form.cost_note} onChange={(e) => setForm({ ...form, cost_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="成本細節說明" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">報價備註</label>
+                  <input type="text" value={form.selling_note} onChange={(e) => setForm({ ...form, selling_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="報價細節說明" />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">報價備註</label>
-                <textarea value={form.selling_note} onChange={(e) => setForm({ ...form, selling_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="報價細節說明..." />
-              </div>
-
-              {/* 請款資訊 */}
               <div className="border-t pt-4">
                 <h4 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
                   <Calendar className="w-4 h-4" /> 請款資訊
@@ -641,6 +605,7 @@ export default function ProjectQuotesPage() {
                   <div>
                     <label className="block text-sm font-medium mb-1">請款週期</label>
                     <select value={form.billing_cycle} onChange={(e) => setForm({ ...form, billing_cycle: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                      <option value="">不設定</option>
                       {Object.entries(billingCycleConfig).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </div>
