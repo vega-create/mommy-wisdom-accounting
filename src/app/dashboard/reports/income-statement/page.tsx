@@ -250,16 +250,16 @@ export default function IncomeStatementPage() {
     const now = new Date();
     switch (type) {
       case 'month':
-        const s = format(startOfMonth(now), 'yyyy-MM-dd'); const e = format(endOfMonth(now), 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
+        { const s1 = format(startOfMonth(now), 'yyyy-MM-dd'); const e1 = format(endOfMonth(now), 'yyyy-MM-dd'); setStartDate(s1); setEndDate(e1); updateURL(s1, e1); }
         break;
       case 'quarter':
         const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
         const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
         const quarterEnd = new Date(now.getFullYear(), quarterMonth + 3, 0);
-        const s = format(quarterStart, 'yyyy-MM-dd'); const e = format(quarterEnd, 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
+        { const s2 = format(quarterStart, 'yyyy-MM-dd'); const e2 = format(quarterEnd, 'yyyy-MM-dd'); setStartDate(s2); setEndDate(e2); updateURL(s2, e2); }
         break;
       case 'year':
-        const s = format(startOfYear(now), 'yyyy-MM-dd'); const e = format(endOfYear(now), 'yyyy-MM-dd'); setStartDate(s); setEndDate(e); updateURL(s, e);
+        { const s3 = format(startOfYear(now), 'yyyy-MM-dd'); const e3 = format(endOfYear(now), 'yyyy-MM-dd'); setStartDate(s3); setEndDate(e3); updateURL(s3, e3); }
         break;
     }
   };
