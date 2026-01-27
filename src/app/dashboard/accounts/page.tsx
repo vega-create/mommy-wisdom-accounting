@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
   Check,
+  RefreshCw,
 } from 'lucide-react';
 
 type BankAccountType = 'cash' | 'bank' | 'petty_cash' | 'credit_card';
@@ -33,11 +34,12 @@ function formatCurrency(amount: number): string {
 }
 
 export default function AccountsPage() {
-  const { bankAccounts, addBankAccount, updateBankAccount } = useDataStore();
+  const { bankAccounts, addBankAccount, updateBankAccount, loadAll } = useDataStore();
   const { canEdit } = useAuthStore();
   
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     account_number: '',
@@ -48,6 +50,12 @@ export default function AccountsPage() {
   });
 
   const totalBalance = bankAccounts.reduce((sum, acc) => sum + acc.current_balance, 0);
+
+  const handleRefresh = async () => {
+    setIsLoading(true);
+    await loadAll();
+    setIsLoading(false);
+  };
 
   const handleOpenModal = (account?: BankAccount) => {
     if (account) {
@@ -78,7 +86,6 @@ export default function AccountsPage() {
     e.preventDefault();
     
     if (editingAccount) {
-      // 計算餘額差異並更新 current_balance
       const balanceDiff = formData.initial_balance - editingAccount.initial_balance;
       await updateBankAccount(editingAccount.id, {
         ...formData,
@@ -97,33 +104,39 @@ export default function AccountsPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">帳戶管理</h1>
           <p className="text-gray-500 mt-1">管理您的現金、銀行及其他帳戶</p>
         </div>
-        <button onClick={() => handleOpenModal()} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          新增帳戶
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleRefresh} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            重新整理
+          </button>
+          <button onClick={() => handleOpenModal()} className="flex items-center gap-2 px-4 py-2 bg-brand-primary-500 text-white rounded-lg hover:bg-brand-primary-600">
+            <Plus className="w-4 h-4" />
+            新增帳戶
+          </button>
+        </div>
       </div>
 
       {/* Summary Card */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white">
-        <p className="text-blue-100 text-sm">總資金餘額</p>
-        <p className="text-4xl font-bold mt-2">{formatCurrency(totalBalance)}</p>
-        <div className="grid grid-cols-4 gap-4 mt-6">
+      <div className="bg-gradient-to-r from-brand-primary-500 to-brand-primary-600 rounded-2xl p-6 text-white mb-6">
+        <p className="text-white/80 text-sm">總資金餘額</p>
+        <p className="text-4xl font-bold mt-2">${totalBalance.toLocaleString()}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           {(['cash', 'bank', 'petty_cash', 'credit_card'] as BankAccountType[]).map(type => {
             const typeAccounts = bankAccounts.filter(a => a.account_type === type);
             const typeTotal = typeAccounts.reduce((sum, a) => sum + a.current_balance, 0);
             const config = accountTypeLabels[type];
             return (
               <div key={type} className="bg-white/10 rounded-xl p-4">
-                <p className="text-blue-100 text-xs">{config.label}</p>
-                <p className="text-lg font-semibold mt-1">{formatCurrency(typeTotal)}</p>
-                <p className="text-blue-200 text-xs mt-1">{typeAccounts.length} 個帳戶</p>
+                <p className="text-white/70 text-xs">{config.label}</p>
+                <p className="text-lg font-semibold mt-1">${typeTotal.toLocaleString()}</p>
+                <p className="text-white/60 text-xs mt-1">{typeAccounts.length} 個帳戶</p>
               </div>
             );
           })}
@@ -131,7 +144,7 @@ export default function AccountsPage() {
       </div>
 
       {/* Accounts List */}
-      <div className="bg-white rounded-xl border border-gray-200">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">所有帳戶</h2>
         </div>
@@ -140,7 +153,7 @@ export default function AccountsPage() {
             <div className="p-8 text-center">
               <Wallet className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">尚未建立任何帳戶</p>
-              <button onClick={() => handleOpenModal()} className="btn-primary mt-4">
+              <button onClick={() => handleOpenModal()} className="mt-4 px-4 py-2 bg-brand-primary-500 text-white rounded-lg hover:bg-brand-primary-600">
                 建立第一個帳戶
               </button>
             </div>
@@ -175,10 +188,10 @@ export default function AccountsPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="font-semibold text-gray-900">{formatCurrency(account.current_balance)}</p>
+                      <p className="font-semibold text-gray-900">${account.current_balance.toLocaleString()}</p>
                       {account.initial_balance !== account.current_balance && (
                         <p className="text-xs text-gray-400">
-                          初始: {formatCurrency(account.initial_balance)}
+                          初始: ${account.initial_balance.toLocaleString()}
                         </p>
                       )}
                     </div>
@@ -198,24 +211,20 @@ export default function AccountsPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">
                 {editingAccount ? '編輯帳戶' : '新增帳戶'}
               </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={() => setShowModal(false)} className="p-1 text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              {/* Account Type */}
               <div>
-                <label className="input-label">帳戶類型</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">帳戶類型</label>
                 <div className="grid grid-cols-2 gap-2">
                   {(['cash', 'bank', 'petty_cash', 'credit_card'] as BankAccountType[]).map(type => {
                     const config = accountTypeLabels[type];
@@ -227,12 +236,12 @@ export default function AccountsPage() {
                         onClick={() => setFormData({ ...formData, account_type: type })}
                         className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
                           formData.account_type === type
-                            ? 'border-blue-500 bg-blue-50'
+                            ? 'border-brand-primary-500 bg-brand-primary-50'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <Icon className={`w-4 h-4 ${formData.account_type === type ? 'text-blue-600' : 'text-gray-400'}`} />
-                        <span className={formData.account_type === type ? 'text-blue-600' : 'text-gray-600'}>
+                        <Icon className={`w-4 h-4 ${formData.account_type === type ? 'text-brand-primary-600' : 'text-gray-400'}`} />
+                        <span className={formData.account_type === type ? 'text-brand-primary-600' : 'text-gray-600'}>
                           {config.label}
                         </span>
                       </button>
@@ -241,75 +250,71 @@ export default function AccountsPage() {
                 </div>
               </div>
 
-              {/* Account Name */}
               <div>
-                <label className="input-label">帳戶名稱 *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">帳戶名稱 *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="input-field"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-transparent"
                   placeholder="例：台新銀行-活存"
                   required
                 />
               </div>
 
-              {/* Bank Info (for bank bankAccounts) */}
               {formData.account_type === 'bank' && (
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="input-label">銀行名稱</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">銀行名稱</label>
                       <input
                         type="text"
                         value={formData.bank_name}
                         onChange={e => setFormData({ ...formData, bank_name: e.target.value })}
-                        className="input-field"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-transparent"
                         placeholder="例：台新國際商業銀行"
                       />
                     </div>
                     <div>
-                      <label className="input-label">分行</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">分行</label>
                       <input
                         type="text"
                         value={formData.bank_branch}
                         onChange={e => setFormData({ ...formData, bank_branch: e.target.value })}
-                        className="input-field"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-transparent"
                         placeholder="例：台中分行"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="input-label">帳號</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
                     <input
                       type="text"
                       value={formData.account_number}
                       onChange={e => setFormData({ ...formData, account_number: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-transparent"
                       placeholder="例：2048-01-0012345-6"
                     />
                   </div>
                 </>
               )}
 
-              {/* Initial Balance */}
               <div>
-                <label className="input-label">初始餘額</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">初始餘額</label>
                 <input
                   type="number"
                   value={formData.initial_balance || ''}
                   onChange={e => setFormData({ ...formData, initial_balance: e.target.value === '' ? 0 : Number(e.target.value) })}
-                  className="input-field"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 focus:border-transparent"
                   placeholder="0"
                 />
               </div>
 
-              {/* Actions */}
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2 border rounded-lg hover:bg-gray-50">
                   取消
                 </button>
-                <button type="submit" className="btn-primary flex-1 flex items-center justify-center gap-2">
+                <button type="submit" className="flex-1 py-2 bg-brand-primary-500 text-white rounded-lg hover:bg-brand-primary-600 flex items-center justify-center gap-2">
                   <Check className="w-4 h-4" />
                   {editingAccount ? '儲存' : '新增'}
                 </button>

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useMemo } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -50,9 +49,6 @@ const dateRangePresets = [
 ];
 
 export default function TransactionsPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  
   const {
     transactions,
     bankAccounts,
@@ -65,30 +61,13 @@ export default function TransactionsPage() {
   
   const { canEdit } = useAuthStore();
 
-  // 從 URL 讀取篩選參數
-  const urlPeriod = searchParams.get('period') || '';
-  const urlType = searchParams.get('type') || 'all';
-  const urlStart = searchParams.get('start') || '';
-  const urlEnd = searchParams.get('end') || '';
-
   const [showModal, setShowModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<TransactionType | 'all'>(urlType as TransactionType | 'all');
-  const [dateRange, setDateRange] = useState({ start: urlStart, end: urlEnd });
-  const [activePeriod, setActivePeriod] = useState(urlPeriod);
+  const [filterType, setFilterType] = useState<TransactionType | 'all'>('all');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-
-  // 更新 URL 參數
-  const updateURL = (period: string, type: string, start: string, end: string) => {
-    const params = new URLSearchParams();
-    if (period) params.set('period', period);
-    if (type && type !== 'all') params.set('type', type);
-    if (start) params.set('start', start);
-    if (end) params.set('end', end);
-    router.replace(`/dashboard/transactions?${params.toString()}`, { scroll: false });
-  };
   
   const [formData, setFormData] = useState({
     transaction_date: format(new Date(), 'yyyy-MM-dd'),
@@ -151,15 +130,11 @@ export default function TransactionsPage() {
   const handleFilterChange = (newFilter: TransactionType | 'all') => {
     setFilterType(newFilter);
     setCurrentPage(1);
-    updateURL(activePeriod, newFilter, dateRange.start, dateRange.end);
   };
 
-  const handleDateRangeChange = (preset: typeof dateRangePresets[0], periodLabel: string) => {
-    const newRange = preset.getValue();
-    setDateRange(newRange);
-    setActivePeriod(periodLabel);
+  const handleDateRangeChange = (preset: typeof dateRangePresets[0]) => {
+    setDateRange(preset.getValue());
     setCurrentPage(1);
-    updateURL(periodLabel, filterType, newRange.start, newRange.end);
   };
 
   // Export CSV
@@ -328,11 +303,11 @@ export default function TransactionsPage() {
         <div className="flex flex-wrap gap-2">
           {dateRangePresets.map((preset, idx) => {
             const presetValue = preset.getValue();
-            const isActive = activePeriod === preset.label || (activePeriod === "" && dateRange.start === presetValue.start && dateRange.end === presetValue.end);
+            const isActive = dateRange.start === presetValue.start && dateRange.end === presetValue.end;
             return (
               <button
                 key={idx}
-                onClick={() => handleDateRangeChange(preset, preset.label)}
+                onClick={() => handleDateRangeChange(preset)}
                 className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                   isActive
                     ? 'bg-blue-600 text-white'
