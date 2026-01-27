@@ -418,6 +418,9 @@ export const useDataStore = create<DataState>((set, get) => ({
   },
 
   deleteTransaction: async (id) => {
+    // 先取得要刪除的交易資料
+    const transaction = get().transactions.find(t => t.id === id);
+
     const { error } = await supabase
       .from('acct_transactions')
       .delete()
@@ -427,6 +430,41 @@ export const useDataStore = create<DataState>((set, get) => ({
       set(state => ({
         transactions: state.transactions.filter(t => t.id !== id)
       }));
+
+      // 刪除成功後，調整帳戶餘額（反向操作）
+      if (transaction) {
+        if (transaction.transaction_type === 'income' && transaction.bank_account_id) {
+          // 收入被刪除 → 餘額要減回去
+          const account = get().bankAccounts.find(b => b.id === transaction.bank_account_id);
+          if (account) {
+            await get().updateBankAccount(transaction.bank_account_id, {
+              current_balance: account.current_balance - transaction.amount
+            });
+          }
+        } else if (transaction.transaction_type === 'expense' && transaction.bank_account_id) {
+          // 支出被刪除 → 餘額要加回去
+          const account = get().bankAccounts.find(b => b.id === transaction.bank_account_id);
+          if (account) {
+            await get().updateBankAccount(transaction.bank_account_id, {
+              current_balance: account.current_balance + transaction.amount
+            });
+          }
+        } else if (transaction.transaction_type === 'transfer' && transaction.from_account_id && transaction.to_account_id) {
+          // 轉帳被刪除 → 反向操作
+          const fromAccount = get().bankAccounts.find(b => b.id === transaction.from_account_id);
+          const toAccount = get().bankAccounts.find(b => b.id === transaction.to_account_id);
+          if (fromAccount) {
+            await get().updateBankAccount(transaction.from_account_id, {
+              current_balance: fromAccount.current_balance + transaction.amount
+            });
+          }
+          if (toAccount) {
+            await get().updateBankAccount(transaction.to_account_id, {
+              current_balance: toAccount.current_balance - transaction.amount
+            });
+          }
+        }
+      }
     }
   },
 
