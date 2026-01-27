@@ -123,24 +123,44 @@ export default function AccountsPage() {
         </div>
       </div>
 
-      {/* Summary Card */}
-      <div className="bg-gradient-to-r from-brand-primary-500 to-brand-primary-600 rounded-2xl p-6 text-white mb-6">
-        <p className="text-white/80 text-sm">總資金餘額</p>
-        <p className="text-4xl font-bold mt-2">${totalBalance.toLocaleString()}</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-          {(['cash', 'bank', 'petty_cash', 'credit_card'] as BankAccountType[]).map(type => {
-            const typeAccounts = bankAccounts.filter(a => a.account_type === type);
-            const typeTotal = typeAccounts.reduce((sum, a) => sum + a.current_balance, 0);
-            const config = accountTypeLabels[type];
-            return (
-              <div key={type} className="bg-white/10 rounded-xl p-4">
-                <p className="text-white/70 text-xs">{config.label}</p>
-                <p className="text-lg font-semibold mt-1">${typeTotal.toLocaleString()}</p>
-                <p className="text-white/60 text-xs mt-1">{typeAccounts.length} 個帳戶</p>
-              </div>
-            );
-          })}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="bg-red-50 rounded-xl border border-red-200 p-4">
+          <div className="flex items-center gap-2 text-brand-primary-600 mb-2">
+            <Wallet className="w-4 h-4" />
+            <span className="text-sm">總資金餘額</span>
+          </div>
+          <p className="text-2xl font-bold text-brand-primary-600">${totalBalance.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">{bankAccounts.length} 個帳戶</p>
         </div>
+        {(['cash', 'bank', 'petty_cash', 'credit_card'] as BankAccountType[]).map(type => {
+          const typeAccounts = bankAccounts.filter(a => a.account_type === type);
+          const typeTotal = typeAccounts.reduce((sum, a) => sum + a.current_balance, 0);
+          const config = accountTypeLabels[type];
+          const Icon = config.icon;
+          const borderColors: Record<BankAccountType, string> = {
+            cash: 'border-green-200 bg-green-50',
+            bank: 'border-blue-200 bg-blue-50',
+            petty_cash: 'border-yellow-200 bg-yellow-50',
+            credit_card: 'border-purple-200 bg-purple-50'
+          };
+          const textColors: Record<BankAccountType, string> = {
+            cash: 'text-green-600',
+            bank: 'text-blue-600',
+            petty_cash: 'text-yellow-600',
+            credit_card: 'text-purple-600'
+          };
+          return (
+            <div key={type} className={`rounded-xl border p-4 ${borderColors[type]}`}>
+              <div className={`flex items-center gap-2 mb-2 ${textColors[type]}`}>
+                <Icon className="w-4 h-4" />
+                <span className="text-sm">{config.label}</span>
+              </div>
+              <p className={`text-2xl font-bold ${textColors[type]}`}>${typeTotal.toLocaleString()}</p>
+              <p className="text-xs text-gray-500 mt-1">{typeAccounts.length} 個帳戶</p>
+            </div>
+          );
+        })}
       </div>
 
       {/* Accounts List */}
