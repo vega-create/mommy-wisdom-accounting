@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
 import { format, endOfMonth } from 'date-fns';
@@ -17,9 +18,21 @@ interface BalanceItem {
 }
 
 export default function BalanceSheetPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_date = searchParams.get('date') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
+
+  // 更新 URL 參數
+  const updateURL = (reportDate: string) => {
+    const params = new URLSearchParams();
+    if (reportDate) params.set('date', reportDate);
+    router.replace(`/dashboard/reports/balance-sheet?${params.toString()}`, { scroll: false });
+  };
+
   const { vouchers, voucherItems } = useDataStore();
   const { company } = useAuthStore();
-  const [reportDate, setReportDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [reportDate, setReportDate] = useState(url_date);
 
   // 計算資產負債表
   const balanceSheet = useMemo(() => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
 import { format, startOfMonth, endOfMonth, startOfYear } from 'date-fns';
@@ -40,11 +41,27 @@ const accountTypeLabels: Record<AccountType, string> = {
 };
 
 export default function LedgerPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_start = searchParams.get('start') || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+  const url_end = searchParams.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
+  const url_account = searchParams.get('account') || 'all';
+
+  // 更新 URL 參數
+  const updateURL = (startDate: string, endDate: string, selectedAccount: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start', startDate);
+    if (endDate) params.set('end', endDate);
+    if (selectedAccount) params.set('account', selectedAccount);
+    router.replace(`/dashboard/reports/ledger?${params.toString()}`, { scroll: false });
+  };
+
   const { vouchers, voucherItems } = useDataStore();
   const { company } = useAuthStore();
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [selectedAccount, setSelectedAccount] = useState<string>('all');
+  const [startDate, setStartDate] = useState(url_start);
+  const [endDate, setEndDate] = useState(url_end);
+  const [selectedAccount, setSelectedAccount] = useState<string>(url_account);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
 
   // 計算各科目的分類帳

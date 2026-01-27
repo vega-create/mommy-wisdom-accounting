@@ -29,7 +29,7 @@ export default function ContractEditPage() {
 
   const fetchCustomers = async () => {
     if (!company?.id) return;
-    const { data } = await supabase.from('acct_customers').select('*').eq('company_id', company.id).order('name');
+    const { data } = await supabase.from('acct_customers').select('*').eq('company_id', company.id).eq('is_active', true).order('name');
     setCustomers(data || []);
   };
 

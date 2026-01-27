@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -63,16 +64,34 @@ interface LaborReport {
 }
 
 export default function LaborReportsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_status = searchParams.get('status') || 'all';
+  const url_type = searchParams.get('type') || 'all';
+  const url_from = searchParams.get('from') || '';
+  const url_to = searchParams.get('to') || '';
+
+  // 更新 URL 參數
+  const updateURL = (statusFilter: string, staffTypeFilter: string, dateFrom: string, dateTo: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (staffTypeFilter) params.set('type', staffTypeFilter);
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    router.replace(`/dashboard/labor?${params.toString()}`, { scroll: false });
+  };
+
   const { company } = useAuthStore();
   const [laborReports, setLaborReports] = useState<LaborReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [staffTypeFilter, setStaffTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>(url_status);
+  const [staffTypeFilter, setStaffTypeFilter] = useState<string>(url_type);
 
   // 時間篩選
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(url_from);
+  const [dateTo, setDateTo] = useState(url_to);
 
   // 刪除確認
   const [deleteId, setDeleteId] = useState<string | null>(null);

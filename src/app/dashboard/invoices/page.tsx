@@ -103,7 +103,7 @@ export default function InvoicesPage() {
   };
 
   const loadCustomers = async () => {
-    const { data } = await supabase.from('acct_customers').select('id, name, tax_id, email, contact_person').eq('company_id', company?.id).order('name');
+    const { data } = await supabase.from('acct_customers').select('id, name, tax_id, email, contact_person').eq('company_id', company?.id).eq('is_active', true).order('name');
     setCustomers(data || []);
   };
 

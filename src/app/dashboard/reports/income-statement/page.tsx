@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
@@ -18,10 +19,24 @@ interface IncomeItem {
 }
 
 export default function IncomeStatementPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_start = searchParams.get('start') || format(startOfMonth(new Date()), 'yyyy-MM-dd');
+  const url_end = searchParams.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
+
+  // 更新 URL 參數
+  const updateURL = (startDate: string, endDate: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('start', startDate);
+    if (endDate) params.set('end', endDate);
+    router.replace(`/dashboard/reports/income-statement?${params.toString()}`, { scroll: false });
+  };
+
   const { vouchers, voucherItems } = useDataStore();
   const { company } = useAuthStore();
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [startDate, setStartDate] = useState(url_start);
+  const [endDate, setEndDate] = useState(url_end);
 
   // 計算損益表
   const incomeStatement = useMemo(() => {

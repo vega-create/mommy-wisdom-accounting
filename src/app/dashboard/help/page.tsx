@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   FileText, Users, Receipt, Send, CreditCard, Building, 
   Settings, Calendar, Bell, ArrowRight, CheckCircle, Workflow,
@@ -147,7 +148,19 @@ const modules = [
 ];
 
 export default function HelpPage() {
-  const [selectedModule, setSelectedModule] = useState<string>('overview');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const url_module = searchParams.get('module') || 'overview';
+
+  // 更新 URL 參數
+  const updateURL = (selectedModule: string) => {
+    const params = new URLSearchParams();
+    if (selectedModule) params.set('module', selectedModule);
+    router.replace(`/dashboard/help?${params.toString()}`, { scroll: false });
+  };
+
+  const [selectedModule, setSelectedModule] = useState<string>(url_module);
 
   const currentModule = modules.find(m => m.id === selectedModule);
 
