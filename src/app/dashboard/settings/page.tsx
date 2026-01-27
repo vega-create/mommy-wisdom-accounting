@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { Users, UserPlus, Shield, Building2, Check, X, Trash2, Edit2, Upload, Save } from 'lucide-react';
@@ -35,6 +36,16 @@ const roleLabels: Record<string, { label: string; color: string }> = {
 };
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const url_tab = searchParams.get('tab') || 'company';
+
+  const updateURL = (tab: string) => {
+    const params = new URLSearchParams();
+    if (tab) params.set('tab', tab);
+    router.replace(`/dashboard/settings?${params.toString()}`, { scroll: false });
+  };
+
   const { company, isAdmin } = useAuthStore();
   const [users, setUsers] = useState<UserWithCompanies[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +61,7 @@ export default function SettingsPage() {
   });
   const [savingCompany, setSavingCompany] = useState(false);
   const [companySuccess, setCompanySuccess] = useState('');
-  const [activeTab, setActiveTab] = useState<'company' | 'users'>('company');
+  const [activeTab, setActiveTab] = useState<'company' | 'users'>(url_tab as 'company' | 'users');
 
   useEffect(() => {
     if (company) {
@@ -216,10 +227,10 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-4 border-b">
-        <button onClick={() => setActiveTab('company')} className={`pb-3 px-1 font-medium ${activeTab === 'company' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
+        <button onClick={() => { setActiveTab('company'); updateURL('company'); }} className={`pb-3 px-1 font-medium ${activeTab === 'company' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
           公司資料
         </button>
-        <button onClick={() => setActiveTab('users')} className={`pb-3 px-1 font-medium ${activeTab === 'users' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
+        <button onClick={() => { setActiveTab('users'); updateURL('users'); }} className={`pb-3 px-1 font-medium ${activeTab === 'users' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
           用戶管理
         </button>
       </div>
