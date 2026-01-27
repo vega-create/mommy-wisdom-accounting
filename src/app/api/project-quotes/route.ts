@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const status = searchParams.get('status');
+    const projectType = searchParams.get('project_type');
     const search = searchParams.get('search');
 
     if (!companyId) {
@@ -23,6 +24,11 @@ export async function GET(request: NextRequest) {
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
+    }
+
+    // 新增：專案類型篩選
+    if (projectType && projectType !== 'all') {
+      query = query.eq('project_type', projectType);
     }
 
     if (search) {
@@ -42,7 +48,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { company_id, quote_date, client_name, project_item, vendor_name, cost_price, cost_note, selling_price, selling_note, status, notes } = body;
+    const { company_id, quote_date, client_name, project_item, vendor_name, cost_price, cost_note, selling_price, selling_note, status, project_type, notes } = body;
 
     if (!company_id || !client_name || !project_item) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
         selling_price: selling_price ? parseFloat(selling_price) : null,
         selling_note: selling_note || null,
         status: status || 'discussing',
+        project_type: project_type || 'quote',
         notes: notes || null
       })
       .select()

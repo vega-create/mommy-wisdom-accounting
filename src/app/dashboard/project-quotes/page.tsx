@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
-import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, X, Download } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, X, Download, Filter } from 'lucide-react';
 
 interface ProjectQuote {
   id: string;
@@ -16,6 +16,7 @@ interface ProjectQuote {
   selling_price?: number;
   selling_note?: string;
   status: string;
+  project_type?: string;
   notes?: string;
   created_at: string;
 }
@@ -29,16 +30,28 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   not_cooperated: { label: '未合作', color: 'text-red-600', bg: 'bg-red-100' }
 };
 
+// 新增：專案類型配置
+const projectTypeConfig: Record<string, { label: string; color: string; bg: string }> = {
+  quote: { label: '客戶報價', color: 'text-blue-600', bg: 'bg-blue-100' },
+  website: { label: '網站架設', color: 'text-green-600', bg: 'bg-green-100' },
+  ads_seo: { label: '廣告/SEO', color: 'text-orange-600', bg: 'bg-orange-100' },
+  design: { label: '設計服務', color: 'text-pink-600', bg: 'bg-pink-100' },
+  social: { label: '社群經營', color: 'text-purple-600', bg: 'bg-purple-100' },
+  other: { label: '其他', color: 'text-gray-600', bg: 'bg-gray-100' }
+};
+
 export default function ProjectQuotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const url_status = searchParams.get('status') || 'all';
+  const url_type = searchParams.get('type') || 'all';
 
   // 更新 URL 參數
-  const updateURL = (statusFilter: string) => {
+  const updateURL = (statusFilter: string, typeFilter: string) => {
     const params = new URLSearchParams();
-    if (statusFilter) params.set('status', statusFilter);
+    if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
+    if (typeFilter && typeFilter !== 'all') params.set('type', typeFilter);
     router.replace(`/dashboard/project-quotes?${params.toString()}`, { scroll: false });
   };
 
@@ -47,6 +60,7 @@ export default function ProjectQuotesPage() {
   const [quotes, setQuotes] = useState<ProjectQuote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState(url_status);
+  const [typeFilter, setTypeFilter] = useState(url_type);
   const [searchText, setSearchText] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingQuote, setEditingQuote] = useState<ProjectQuote | null>(null);
@@ -62,12 +76,13 @@ export default function ProjectQuotesPage() {
     selling_price: '',
     selling_note: '',
     status: 'discussing',
+    project_type: 'quote',
     notes: ''
   });
 
   useEffect(() => {
     if (company?.id) loadQuotes();
-  }, [company?.id, statusFilter]);
+  }, [company?.id, statusFilter, typeFilter]);
 
   const loadQuotes = async () => {
     if (!company?.id) return;
@@ -75,8 +90,9 @@ export default function ProjectQuotesPage() {
     try {
       const params = new URLSearchParams({ company_id: company.id });
       if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (typeFilter !== 'all') params.append('project_type', typeFilter);
       if (searchText) params.append('search', searchText);
-      
+
       const res = await fetch(`/api/project-quotes?${params}`);
       const result = await res.json();
       if (result.data) setQuotes(result.data);
@@ -88,6 +104,16 @@ export default function ProjectQuotesPage() {
   };
 
   const handleSearch = () => loadQuotes();
+
+  const handleStatusFilter = (s: string) => {
+    setStatusFilter(s);
+    updateURL(s, typeFilter);
+  };
+
+  const handleTypeFilter = (t: string) => {
+    setTypeFilter(t);
+    updateURL(statusFilter, t);
+  };
 
   const openAddModal = () => {
     setEditingQuote(null);
@@ -101,6 +127,7 @@ export default function ProjectQuotesPage() {
       selling_price: '',
       selling_note: '',
       status: 'discussing',
+      project_type: 'quote',
       notes: ''
     });
     setShowModal(true);
@@ -118,6 +145,7 @@ export default function ProjectQuotesPage() {
       selling_price: quote.selling_price?.toString() || '',
       selling_note: quote.selling_note || '',
       status: quote.status,
+      project_type: quote.project_type || 'quote',
       notes: quote.notes || ''
     });
     setShowModal(true);
@@ -132,7 +160,7 @@ export default function ProjectQuotesPage() {
     try {
       const method = editingQuote ? 'PUT' : 'POST';
       const body = editingQuote ? { id: editingQuote.id, ...form } : { company_id: company.id, ...form };
-      
+
       const res = await fetch('/api/project-quotes', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -165,9 +193,10 @@ export default function ProjectQuotesPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['日期', '需求公司', '需求品項', '製作單位', '成本價', '成本備註', '報價', '報價備註', '狀況'];
+    const headers = ['日期', '專案類型', '需求公司', '需求品項', '製作單位', '成本價', '成本備註', '報價', '報價備註', '狀況'];
     const rows = quotes.map(q => [
       q.quote_date,
+      projectTypeConfig[q.project_type || 'quote']?.label || q.project_type,
       q.client_name,
       q.project_item,
       q.vendor_name || '',
@@ -236,17 +265,34 @@ export default function ProjectQuotesPage() {
 
       <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
         <div className="flex flex-wrap gap-4 items-center">
+          {/* 狀態篩選 */}
           <div className="flex gap-2 flex-wrap">
             {['all', 'discussing', 'in_progress', 'completed', 'contract_changed', 'not_cooperated'].map(s => (
               <button
                 key={s}
-                onClick={() => { setStatusFilter(s); updateURL(s); }}
+                onClick={() => handleStatusFilter(s)}
                 className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === s ? 'bg-brand-primary-500 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
               >
                 {s === 'all' ? '全部' : statusConfig[s]?.label}
               </button>
             ))}
           </div>
+
+          {/* 專案類型篩選 - 新增 */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <select
+              value={typeFilter}
+              onChange={(e) => handleTypeFilter(e.target.value)}
+              className="px-3 py-1.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-brand-primary-500"
+            >
+              <option value="all">所有類型</option>
+              {Object.entries(projectTypeConfig).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex gap-2 flex-1 max-w-md">
             <input
               type="text"
@@ -272,6 +318,7 @@ export default function ProjectQuotesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">日期</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">類型</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">需求公司</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">需求品項</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">製作單位</th>
@@ -286,9 +333,13 @@ export default function ProjectQuotesPage() {
               {quotes.map(quote => {
                 const profit = (quote.selling_price || 0) - (quote.cost_price || 0);
                 const config = statusConfig[quote.status] || { label: quote.status, color: 'text-gray-600', bg: 'bg-gray-100' };
+                const typeConfig = projectTypeConfig[quote.project_type || 'quote'] || { label: '客戶報價', color: 'text-gray-600', bg: 'bg-gray-100' };
                 return (
                   <tr key={quote.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm">{quote.quote_date}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs ${typeConfig.bg} ${typeConfig.color}`}>{typeConfig.label}</span>
+                    </td>
                     <td className="px-4 py-3 text-sm font-medium">{quote.client_name}</td>
                     <td className="px-4 py-3 text-sm max-w-xs truncate" title={quote.project_item}>{quote.project_item}</td>
                     <td className="px-4 py-3 text-sm">{quote.vendor_name || '-'}</td>
@@ -314,7 +365,7 @@ export default function ProjectQuotesPage() {
                 );
               })}
               {quotes.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">尚無資料</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">尚無資料</td></tr>
               )}
             </tbody>
           </table>
@@ -329,51 +380,57 @@ export default function ProjectQuotesPage() {
               <button onClick={() => setShowModal(false)}><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">日期</label>
-                  <input type="date" value={form.quote_date} onChange={(e) => setForm({...form, quote_date: e.target.value})} className="w-full border rounded-lg px-3 py-2" />
+                  <input type="date" value={form.quote_date} onChange={(e) => setForm({ ...form, quote_date: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">專案類型</label>
+                  <select value={form.project_type} onChange={(e) => setForm({ ...form, project_type: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                    {Object.entries(projectTypeConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">狀況</label>
-                  <select value={form.status} onChange={(e) => setForm({...form, status: e.target.value})} className="w-full border rounded-lg px-3 py-2">
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border rounded-lg px-3 py-2">
                     {Object.entries(statusConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">需求公司 *</label>
-                <input type="text" value={form.client_name} onChange={(e) => setForm({...form, client_name: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="客戶名稱" />
+                <input type="text" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="客戶名稱" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">需求品項 *</label>
-                <input type="text" value={form.project_item} onChange={(e) => setForm({...form, project_item: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="網站設計、SEO、廣告投放..." />
+                <input type="text" value={form.project_item} onChange={(e) => setForm({ ...form, project_item: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="網站設計、SEO、廣告投放..." />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">製作單位</label>
-                <input type="text" value={form.vendor_name} onChange={(e) => setForm({...form, vendor_name: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="外包廠商名稱" />
+                <input type="text" value={form.vendor_name} onChange={(e) => setForm({ ...form, vendor_name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="外包廠商名稱" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">成本價</label>
-                  <input type="number" value={form.cost_price} onChange={(e) => setForm({...form, cost_price: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="0" />
+                  <input type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">智慧媽咪報價</label>
-                  <input type="number" value={form.selling_price} onChange={(e) => setForm({...form, selling_price: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="0" />
+                  <input type="number" value={form.selling_price} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="0" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">成本備註</label>
-                <textarea value={form.cost_note} onChange={(e) => setForm({...form, cost_note: e.target.value})} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="成本細節說明..." />
+                <textarea value={form.cost_note} onChange={(e) => setForm({ ...form, cost_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="成本細節說明..." />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">報價備註</label>
-                <textarea value={form.selling_note} onChange={(e) => setForm({...form, selling_note: e.target.value})} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="報價細節說明..." />
+                <textarea value={form.selling_note} onChange={(e) => setForm({ ...form, selling_note: e.target.value })} className="w-full border rounded-lg px-3 py-2" rows={2} placeholder="報價細節說明..." />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">其他備註</label>
-                <textarea value={form.notes} onChange={(e) => setForm({...form, notes: e.target.value})} className="w-full border rounded-lg px-3 py-2" rows={2} />
+                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full border rounded-lg px-3 py-2" rows={2} />
               </div>
             </div>
             <div className="p-6 border-t flex gap-3">
