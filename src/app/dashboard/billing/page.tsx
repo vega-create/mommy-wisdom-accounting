@@ -83,6 +83,8 @@ interface RecurringBilling {
   next_run_at?: string;
   last_run_at?: string;
   run_count: number;
+  auto_send?: boolean;
+  message_template?: string;
 }
 
 export default function BillingPage() {
@@ -146,7 +148,9 @@ export default function BillingPage() {
     schedule_type: 'yearly' as 'monthly' | 'quarterly' | 'yearly',
     schedule_day: 1,
     schedule_month: 1,
-    days_before_due: 14
+    days_before_due: 14,
+    auto_send: true,
+    message_template: ''
   });
 
   // Form state
@@ -413,7 +417,23 @@ export default function BillingPage() {
       schedule_type: 'yearly',
       schedule_day: 1,
       schedule_month: 1,
-      days_before_due: 14
+      days_before_due: 14,
+      auto_send: true,
+      message_template: `【請款通知】
+
+{客戶名稱} 您好，
+
+{請款項目}費用請款如下：
+
+請款金額：NT$ {金額}
+付款期限：{到期日}
+
+匯款資訊：
+{匯款帳戶}
+
+如已付款請忽略此通知，謝謝！
+
+智慧媽咪國際 敬上`
     });
     setShowRecurringModal(true);
   };
@@ -436,7 +456,23 @@ export default function BillingPage() {
       schedule_type: recurring.schedule_type,
       schedule_day: recurring.schedule_day,
       schedule_month: recurring.schedule_month || 1,
-      days_before_due: recurring.days_before_due || 14
+      days_before_due: recurring.days_before_due || 14,
+      auto_send: recurring.auto_send !== false,
+      message_template: recurring.message_template || `【請款通知】
+
+{客戶名稱} 您好，
+
+{請款項目}費用請款如下：
+
+請款金額：NT$ {金額}
+付款期限：{到期日}
+
+匯款資訊：
+{匯款帳戶}
+
+如已付款請忽略此通知，謝謝！
+
+智慧媽咪國際 敬上`
     });
     setShowRecurringModal(true);
   };
@@ -1536,9 +1572,47 @@ ${accountInfo}
                   {recurringForm.schedule_type === 'yearly' && `每年 ${recurringForm.schedule_month} 月 ${recurringForm.schedule_day} 日`}
                   {recurringForm.schedule_type === 'quarterly' && `每季 ${recurringForm.schedule_day} 日`}
                   {recurringForm.schedule_type === 'monthly' && `每月 ${recurringForm.schedule_day} 日`}
-                  {' '}自動產生請款單並發送 LINE 通知
+                  {' '}自動產生請款單{recurringForm.auto_send ? '並發送 LINE 通知' : '（草稿）'}
                 </p>
               </div>
+
+              {/* 自動發送開關 */}
+              <div className="border-t pt-4">
+                <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <span className="font-medium text-gray-700">自動發送 LINE 通知</span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {recurringForm.auto_send
+                        ? '時間到自動發送請款通知'
+                        : '時間到只產生草稿，需手動發送'}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={recurringForm.auto_send}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, auto_send: e.target.checked })}
+                    className="w-5 h-5 rounded text-purple-600"
+                  />
+                </label>
+              </div>
+
+              {/* 訊息模板 */}
+              {recurringForm.auto_send && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    訊息模板
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    可用變數：{'{客戶名稱}'} {'{請款項目}'} {'{金額}'} {'{到期日}'} {'{匯款帳戶}'}
+                  </p>
+                  <textarea
+                    value={recurringForm.message_template}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, message_template: e.target.value })}
+                    rows={10}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm font-mono"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">
