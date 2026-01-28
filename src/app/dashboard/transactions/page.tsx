@@ -251,6 +251,7 @@ export default function TransactionsPage() {
 
     const submitData = {
       ...formData,
+      has_fee: formData.has_fee,
       fee_amount: formData.has_fee ? formData.fee_amount : 0,
     };
 
