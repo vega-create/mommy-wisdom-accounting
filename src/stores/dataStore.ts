@@ -64,6 +64,8 @@ export interface Transaction {
   voucher_id: string | null;
   tags: string[] | null;
   notes: string | null;
+  has_fee: boolean;
+  fee_amount: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -334,13 +336,23 @@ export const useDataStore = create<DataState>((set, get) => ({
       .eq('company_id', company.id)
       .order('transaction_date', { ascending: false });
 
-    set({ transactions: data || [] });
+    // 確保 has_fee 和 fee_amount 有預設值
+    const transactions = (data || []).map(t => ({
+      ...t,
+      has_fee: t.has_fee || false,
+      fee_amount: t.fee_amount || 0,
+    }));
+
+    set({ transactions });
   },
 
   addTransaction: async (data) => {
     const company = useAuthStore.getState().company;
     const user = useAuthStore.getState().user;
     if (!company || !user) return null;
+
+    // 計算總金額（本金 + 手續費）
+    const totalAmount = data.amount + (data.has_fee ? (data.fee_amount || 0) : 0);
 
     // 重要：清理空字串為 null，避免 UUID 欄位錯誤
     const { data: newTransaction, error } = await supabase
@@ -358,6 +370,8 @@ export const useDataStore = create<DataState>((set, get) => ({
         voucher_id: data.voucher_id || null,
         notes: data.notes || null,
         tags: data.tags || null,
+        has_fee: data.has_fee || false,
+        fee_amount: data.has_fee ? (data.fee_amount || 0) : 0,
         company_id: company.id,
         created_by: user.id,
       })
@@ -367,7 +381,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (!error && newTransaction) {
       set(state => ({ transactions: [newTransaction, ...state.transactions] }));
 
-      // 更新帳戶餘額
+      // 更新帳戶餘額（包含手續費）
       if (data.transaction_type === 'income' && data.bank_account_id) {
         const account = get().bankAccounts.find(b => b.id === data.bank_account_id);
         if (account) {
@@ -378,19 +392,22 @@ export const useDataStore = create<DataState>((set, get) => ({
       } else if (data.transaction_type === 'expense' && data.bank_account_id) {
         const account = get().bankAccounts.find(b => b.id === data.bank_account_id);
         if (account) {
+          // 支出扣除本金 + 手續費
           await get().updateBankAccount(data.bank_account_id, {
-            current_balance: account.current_balance - data.amount
+            current_balance: account.current_balance - totalAmount
           });
         }
       } else if (data.transaction_type === 'transfer' && data.from_account_id && data.to_account_id) {
         const fromAccount = get().bankAccounts.find(b => b.id === data.from_account_id);
         const toAccount = get().bankAccounts.find(b => b.id === data.to_account_id);
         if (fromAccount) {
+          // 轉出帳戶扣除本金 + 手續費
           await get().updateBankAccount(data.from_account_id, {
-            current_balance: fromAccount.current_balance - data.amount
+            current_balance: fromAccount.current_balance - totalAmount
           });
         }
         if (toAccount) {
+          // 轉入帳戶只加本金（不含手續費）
           await get().updateBankAccount(data.to_account_id, {
             current_balance: toAccount.current_balance + data.amount
           });
@@ -433,6 +450,9 @@ export const useDataStore = create<DataState>((set, get) => ({
 
       // 刪除成功後，調整帳戶餘額（反向操作）
       if (transaction) {
+        // 計算總金額（本金 + 手續費）
+        const totalAmount = transaction.amount + (transaction.fee_amount || 0);
+
         if (transaction.transaction_type === 'income' && transaction.bank_account_id) {
           // 收入被刪除 → 餘額要減回去
           const account = get().bankAccounts.find(b => b.id === transaction.bank_account_id);
@@ -442,11 +462,11 @@ export const useDataStore = create<DataState>((set, get) => ({
             });
           }
         } else if (transaction.transaction_type === 'expense' && transaction.bank_account_id) {
-          // 支出被刪除 → 餘額要加回去
+          // 支出被刪除 → 餘額要加回去（本金 + 手續費）
           const account = get().bankAccounts.find(b => b.id === transaction.bank_account_id);
           if (account) {
             await get().updateBankAccount(transaction.bank_account_id, {
-              current_balance: account.current_balance + transaction.amount
+              current_balance: account.current_balance + totalAmount
             });
           }
         } else if (transaction.transaction_type === 'transfer' && transaction.from_account_id && transaction.to_account_id) {
@@ -454,11 +474,13 @@ export const useDataStore = create<DataState>((set, get) => ({
           const fromAccount = get().bankAccounts.find(b => b.id === transaction.from_account_id);
           const toAccount = get().bankAccounts.find(b => b.id === transaction.to_account_id);
           if (fromAccount) {
+            // 轉出帳戶加回本金 + 手續費
             await get().updateBankAccount(transaction.from_account_id, {
-              current_balance: fromAccount.current_balance + transaction.amount
+              current_balance: fromAccount.current_balance + totalAmount
             });
           }
           if (toAccount) {
+            // 轉入帳戶扣回本金
             await get().updateBankAccount(transaction.to_account_id, {
               current_balance: toAccount.current_balance - transaction.amount
             });

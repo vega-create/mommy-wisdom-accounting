@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/lib/supabase';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import {
   Plus,
@@ -63,7 +64,7 @@ export default function TransactionsPage() {
     deleteTransaction,
   } = useDataStore();
 
-  const { canEdit } = useAuthStore();
+  const { company, canEdit } = useAuthStore();
 
   // 從 URL 讀取篩選參數
   const urlPeriod = searchParams.get('period') || '';
@@ -79,6 +80,25 @@ export default function TransactionsPage() {
   const [activePeriod, setActivePeriod] = useState(urlPeriod);
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // 預設手續費設定
+  const [defaultFee, setDefaultFee] = useState(15);
+
+  // 載入公司的預設手續費設定
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!company) return;
+      const { data } = await supabase
+        .from('acct_companies')
+        .select('default_transfer_fee')
+        .eq('id', company.id)
+        .single();
+      if (data?.default_transfer_fee) {
+        setDefaultFee(data.default_transfer_fee);
+      }
+    };
+    loadSettings();
+  }, [company]);
 
   // 更新 URL 參數
   const updateURL = (period: string, type: string, start: string, end: string) => {
@@ -103,6 +123,8 @@ export default function TransactionsPage() {
     voucher_id: null as string | null,
     tags: null as string[] | null,
     notes: '',
+    has_fee: false,
+    fee_amount: 0,
   });
 
   // Filter transactions
@@ -133,11 +155,13 @@ export default function TransactionsPage() {
       .reduce((sum, t) => sum + t.amount, 0);
     const expense = filteredTransactions
       .filter(t => t.transaction_type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum, t) => sum + t.amount + (t.fee_amount || 0), 0);
     const transfer = filteredTransactions
       .filter(t => t.transaction_type === 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
-    return { income, expense, transfer, net: income - expense, count: filteredTransactions.length };
+    const totalFees = filteredTransactions
+      .reduce((sum, t) => sum + (t.fee_amount || 0), 0);
+    return { income, expense, transfer, net: income - expense, count: filteredTransactions.length, totalFees };
   }, [filteredTransactions]);
 
   // Pagination
@@ -164,7 +188,7 @@ export default function TransactionsPage() {
 
   // Export CSV
   const exportToCSV = () => {
-    const headers = ['日期', '類型', '描述', '帳戶', '客戶/廠商', '金額', '備註'];
+    const headers = ['日期', '類型', '描述', '帳戶', '客戶/廠商', '金額', '手續費', '備註'];
     const rows = filteredTransactions.map(t => {
       const typeLabel = transactionTypeConfig[t.transaction_type].label;
       let accountName = '';
@@ -185,17 +209,19 @@ export default function TransactionsPage() {
         accountName,
         customerName,
         amount.toString(),
+        (t.fee_amount || 0).toString(),
         t.notes || ''
       ];
     });
 
     // Add summary row
     rows.push([]);
-    rows.push(['=== 統計摘要 ===', '', '', '', '', '', '']);
-    rows.push(['總收入', '', '', '', '', totals.income.toString(), '']);
-    rows.push(['總支出', '', '', '', '', (-totals.expense).toString(), '']);
-    rows.push(['淨額', '', '', '', '', totals.net.toString(), '']);
-    rows.push(['筆數', '', '', '', '', totals.count.toString(), '']);
+    rows.push(['=== 統計摘要 ===', '', '', '', '', '', '', '']);
+    rows.push(['總收入', '', '', '', '', totals.income.toString(), '', '']);
+    rows.push(['總支出', '', '', '', '', (-totals.expense).toString(), '', '']);
+    rows.push(['總手續費', '', '', '', '', '', totals.totalFees.toString(), '']);
+    rows.push(['淨額', '', '', '', '', totals.net.toString(), '', '']);
+    rows.push(['筆數', '', '', '', '', totals.count.toString(), '', '']);
 
     const csvContent = [
       headers.join(','),
@@ -223,12 +249,17 @@ export default function TransactionsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const submitData = {
+      ...formData,
+      fee_amount: formData.has_fee ? formData.fee_amount : 0,
+    };
+
     if (editingTransaction) {
       // 編輯模式
-      await updateTransaction(editingTransaction, formData);
+      await updateTransaction(editingTransaction, submitData);
     } else {
       // 新增模式
-      await addTransaction(formData);
+      await addTransaction(submitData);
     }
 
     setShowModal(false);
@@ -246,6 +277,8 @@ export default function TransactionsPage() {
       voucher_id: null,
       tags: null,
       notes: '',
+      has_fee: false,
+      fee_amount: 0,
     });
   };
 
@@ -264,6 +297,8 @@ export default function TransactionsPage() {
       voucher_id: null,
       tags: null,
       notes: '',
+      has_fee: false,
+      fee_amount: defaultFee,
     });
     setShowModal(true);
   };
@@ -283,6 +318,8 @@ export default function TransactionsPage() {
       voucher_id: transaction.voucher_id || null,
       tags: transaction.tags || null,
       notes: transaction.notes || '',
+      has_fee: transaction.has_fee || false,
+      fee_amount: transaction.fee_amount || defaultFee,
     });
     setShowModal(true);
   };
@@ -292,8 +329,20 @@ export default function TransactionsPage() {
     setDeleteConfirm(null);
   };
 
+  // 勾選手續費時，自動帶入預設金額
+  const handleFeeToggle = (checked: boolean) => {
+    setFormData({
+      ...formData,
+      has_fee: checked,
+      fee_amount: checked ? defaultFee : 0,
+    });
+  };
+
   const expenseCategories = accountCategories.filter(c => c.type === 'expense' && c.is_active);
   const revenueCategories = accountCategories.filter(c => c.type === 'revenue' && c.is_active);
+
+  // 計算總金額（含手續費）
+  const totalAmount = formData.amount + (formData.has_fee ? formData.fee_amount : 0);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -376,7 +425,10 @@ export default function TransactionsPage() {
             <span className="text-sm text-red-600 font-medium">支出</span>
           </div>
           <p className="text-2xl font-bold text-red-700 mt-2">{formatCurrency(totals.expense)}</p>
-          <p className="text-xs text-red-600 mt-1">{filteredTransactions.filter(t => t.transaction_type === 'expense').length} 筆</p>
+          <p className="text-xs text-red-600 mt-1">
+            {filteredTransactions.filter(t => t.transaction_type === 'expense').length} 筆
+            {totals.totalFees > 0 && <span className="ml-1">（含手續費 {formatCurrency(totals.totalFees)}）</span>}
+          </p>
         </div>
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
           <div className="flex items-center gap-2">
@@ -463,6 +515,7 @@ export default function TransactionsPage() {
                     a.id === t.bank_account_id || a.id === t.from_account_id || a.id === t.to_account_id
                   );
                   const customer = customers.find(c => c.id === t.customer_id);
+                  const displayAmount = t.amount + (t.fee_amount || 0);
 
                   return (
                     <tr key={t.id}>
@@ -478,6 +531,9 @@ export default function TransactionsPage() {
                       <td>
                         <p className="font-medium text-gray-900">{t.description}</p>
                         {t.notes && <p className="text-xs text-gray-500 mt-0.5">{t.notes}</p>}
+                        {t.fee_amount > 0 && (
+                          <p className="text-xs text-orange-600 mt-0.5">含手續費 {formatCurrency(t.fee_amount)}</p>
+                        )}
                       </td>
                       <td>
                         {t.transaction_type === 'transfer' ? (
@@ -494,7 +550,7 @@ export default function TransactionsPage() {
                       <td className="text-right">
                         <span className={`font-semibold ${config.color}`}>
                           {t.transaction_type === 'income' ? '+' : t.transaction_type === 'expense' ? '-' : ''}
-                          {formatCurrency(t.amount)}
+                          {formatCurrency(displayAmount)}
                         </span>
                       </td>
                       <td className="text-right">
@@ -737,6 +793,41 @@ export default function TransactionsPage() {
                     </select>
                   </div>
                 </>
+              )}
+
+              {/* Fee Section - 只在支出或轉帳時顯示 */}
+              {(formData.transaction_type === 'expense' || formData.transaction_type === 'transfer') && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="has_fee"
+                      checked={formData.has_fee}
+                      onChange={e => handleFeeToggle(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                    />
+                    <label htmlFor="has_fee" className="text-sm font-medium text-orange-800">
+                      加入手續費
+                    </label>
+                  </div>
+
+                  {formData.has_fee && (
+                    <div className="mt-3">
+                      <label className="text-sm text-orange-700">手續費金額</label>
+                      <input
+                        type="number"
+                        value={formData.fee_amount || ''}
+                        onChange={e => setFormData({ ...formData, fee_amount: e.target.value === '' ? 0 : Number(e.target.value) })}
+                        className="input-field mt-1"
+                        placeholder="15"
+                        min="0"
+                      />
+                      <p className="text-xs text-orange-600 mt-2">
+                        總金額：{formatCurrency(totalAmount)}（本金 {formatCurrency(formData.amount)} + 手續費 {formatCurrency(formData.fee_amount)}）
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Customer */}

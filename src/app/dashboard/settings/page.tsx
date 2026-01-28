@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { Users, UserPlus, Shield, Building2, Check, X, Trash2, Edit2, Upload, Save } from 'lucide-react';
+import { Users, UserPlus, Shield, Building2, Check, X, Trash2, Edit2, Upload, Save, Settings, DollarSign } from 'lucide-react';
 
 interface UserWithCompanies {
   id: string;
@@ -27,6 +27,7 @@ interface CompanySettings {
   bank_name: string;
   bank_account: string;
   bank_account_name: string;
+  default_transfer_fee: number;
 }
 
 const roleLabels: Record<string, { label: string; color: string }> = {
@@ -54,14 +55,16 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState({ email: '', name: '', password: '', role: 'viewer' as 'admin' | 'accountant' | 'viewer' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
+
   // 公司設定
   const [companySettings, setCompanySettings] = useState<CompanySettings>({
-    name: '', tax_id: '', address: '', phone: '', email: '', logo_url: '', stamp_url: '', bank_name: '', bank_account: '', bank_account_name: ''
+    name: '', tax_id: '', address: '', phone: '', email: '', logo_url: '', stamp_url: '',
+    bank_name: '', bank_account: '', bank_account_name: '',
+    default_transfer_fee: 15
   });
   const [savingCompany, setSavingCompany] = useState(false);
   const [companySuccess, setCompanySuccess] = useState('');
-  const [activeTab, setActiveTab] = useState<'company' | 'users'>(url_tab as 'company' | 'users');
+  const [activeTab, setActiveTab] = useState<'company' | 'transaction' | 'users'>(url_tab as 'company' | 'transaction' | 'users');
 
   useEffect(() => {
     if (company) {
@@ -85,6 +88,7 @@ export default function SettingsPage() {
         bank_name: data.bank_name || '',
         bank_account: data.bank_account || '',
         bank_account_name: data.bank_account_name || '',
+        default_transfer_fee: data.default_transfer_fee || 15,
       });
     }
   };
@@ -93,7 +97,7 @@ export default function SettingsPage() {
     if (!company) return;
     setSavingCompany(true);
     setCompanySuccess('');
-    
+
     const { error } = await supabase
       .from('acct_companies')
       .update({
@@ -107,11 +111,12 @@ export default function SettingsPage() {
         bank_name: companySettings.bank_name,
         bank_account: companySettings.bank_account,
         bank_account_name: companySettings.bank_account_name,
+        default_transfer_fee: companySettings.default_transfer_fee,
       })
       .eq('id', company.id);
 
     setSavingCompany(false);
-    if (!error) setCompanySuccess('公司資料已儲存');
+    if (!error) setCompanySuccess('設定已儲存');
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'logo_url' | 'stamp_url') => {
@@ -222,13 +227,16 @@ export default function SettingsPage() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">系統設定</h1>
-        <p className="text-gray-500 mt-1">管理公司資料與用戶權限</p>
+        <p className="text-gray-500 mt-1">管理公司資料、交易設定與用戶權限</p>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-4 border-b">
         <button onClick={() => { setActiveTab('company'); updateURL('company'); }} className={`pb-3 px-1 font-medium ${activeTab === 'company' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
           公司資料
+        </button>
+        <button onClick={() => { setActiveTab('transaction'); updateURL('transaction'); }} className={`pb-3 px-1 font-medium ${activeTab === 'transaction' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
+          交易設定
         </button>
         <button onClick={() => { setActiveTab('users'); updateURL('users'); }} className={`pb-3 px-1 font-medium ${activeTab === 'users' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}>
           用戶管理
@@ -335,6 +343,63 @@ export default function SettingsPage() {
             <button onClick={handleSaveCompany} disabled={savingCompany} className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center gap-2">
               <Save className="w-4 h-4" />
               {savingCompany ? '儲存中...' : '儲存公司資料'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'transaction' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+              <DollarSign className="w-6 h-6 text-orange-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">交易設定</h2>
+              <p className="text-sm text-gray-500">設定交易記錄的預設值</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* 預設手續費 */}
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <h3 className="font-semibold text-orange-800 mb-3">轉帳手續費設定</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-orange-700 mb-1">預設手續費金額</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-orange-600">NT$</span>
+                    <input
+                      type="number"
+                      value={companySettings.default_transfer_fee}
+                      onChange={(e) => setCompanySettings({ ...companySettings, default_transfer_fee: Number(e.target.value) })}
+                      className="w-32 border border-orange-300 rounded-lg px-4 py-2 focus:ring-orange-500 focus:border-orange-500"
+                      min="0"
+                    />
+                  </div>
+                  <p className="text-xs text-orange-600 mt-2">記錄支出或轉帳時，勾選「加入手續費」會自動帶入此金額</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 說明 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-800 mb-2">使用說明</h3>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• 在交易記錄新增「支出」或「轉帳」時，可勾選「加入手續費」</li>
+                <li>• 勾選後會自動帶入預設手續費金額，也可以手動修改</li>
+                <li>• 手續費會加入總金額一起計算，讓帳目更準確</li>
+                <li>• 例如：轉帳 10,000 元 + 手續費 15 元 = 總支出 10,015 元</li>
+              </ul>
+            </div>
+          </div>
+
+          {companySuccess && <div className="mt-4 bg-green-50 text-green-600 px-4 py-2 rounded-lg text-sm">{companySuccess}</div>}
+
+          <div className="mt-6">
+            <button onClick={handleSaveCompany} disabled={savingCompany} className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center gap-2">
+              <Save className="w-4 h-4" />
+              {savingCompany ? '儲存中...' : '儲存設定'}
             </button>
           </div>
         </div>
