@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 // GET - 取得收款帳戶列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
 
@@ -33,8 +34,9 @@ export async function GET(request: NextRequest) {
 // POST - 新增收款帳戶
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
-    const { 
+    const {
       company_id,
       bank_code,
       bank_name,
@@ -82,6 +84,7 @@ export async function POST(request: NextRequest) {
 // PUT - 更新收款帳戶
 export async function PUT(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { id, company_id, ...updates } = body;
 
@@ -119,6 +122,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - 刪除收款帳戶（軟刪除）
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
