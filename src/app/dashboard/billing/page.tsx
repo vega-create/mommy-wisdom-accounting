@@ -6,7 +6,8 @@ import { useAuthStore } from '@/stores/authStore';
 import {
   FileText, Plus, Send, Check, Clock, AlertCircle,
   Edit2, Trash2, RefreshCw, DollarSign, Calendar,
-  User, Building, X, MessageCircle, CheckCircle, Receipt
+  User, Building, X, MessageCircle, CheckCircle, Receipt,
+  Repeat, Play, Pause
 } from 'lucide-react';
 
 interface Customer {
@@ -46,7 +47,6 @@ interface BillingRequest {
   amount: number;
   tax_amount: number;
   total_amount: number;
-  // 成本欄位
   cost_vendor_id?: string;
   cost_vendor_name?: string;
   cost_amount?: number;
@@ -61,19 +61,41 @@ interface BillingRequest {
   payment_account?: PaymentAccount;
 }
 
+interface RecurringBilling {
+  id: string;
+  customer_id?: string;
+  customer_name: string;
+  customer_line_group_id?: string;
+  customer_line_group_name?: string;
+  title: string;
+  description?: string;
+  amount: number;
+  tax_amount: number;
+  cost_amount?: number;
+  cost_vendor_id?: string;
+  cost_vendor_name?: string;
+  payment_account_id?: string;
+  schedule_type: 'monthly' | 'quarterly' | 'yearly';
+  schedule_day: number;
+  schedule_month?: number;
+  days_before_due: number;
+  is_active: boolean;
+  next_run_at?: string;
+  last_run_at?: string;
+  run_count: number;
+}
+
 export default function BillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const url_status = searchParams.get('status') || 'all';
 
-  // 更新 URL 參數
   const updateURL = (statusFilter: string) => {
     const params = new URLSearchParams();
     if (statusFilter) params.set('status', statusFilter);
     router.replace(`/dashboard/billing?${params.toString()}`, { scroll: false });
   };
-
 
   const { company } = useAuthStore();
   const [billings, setBillings] = useState<BillingRequest[]>([]);
@@ -98,8 +120,34 @@ export default function BillingPage() {
   const [previewMessage, setPreviewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
-  // 廠商列表（用於成本選擇）
+  // 廠商列表
   const [vendors, setVendors] = useState<Customer[]>([]);
+
+  // ========== 週期性請款 ==========
+  const [recurringBillings, setRecurringBillings] = useState<RecurringBilling[]>([]);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringBilling | null>(null);
+  const [isSavingRecurring, setIsSavingRecurring] = useState(false);
+  const [showRecurringList, setShowRecurringList] = useState(false);
+
+  const [recurringForm, setRecurringForm] = useState({
+    customer_id: '',
+    customer_name: '',
+    customer_line_group_id: '',
+    customer_line_group_name: '',
+    title: '',
+    description: '',
+    amount: '',
+    tax_amount: '0',
+    cost_amount: '',
+    cost_vendor_id: '',
+    cost_vendor_name: '',
+    payment_account_id: '',
+    schedule_type: 'yearly' as 'monthly' | 'quarterly' | 'yearly',
+    schedule_day: 1,
+    schedule_month: 1,
+    days_before_due: 14
+  });
 
   // Form state
   const [form, setForm] = useState({
@@ -116,19 +164,17 @@ export default function BillingPage() {
     tax_amount: '0',
     payment_account_id: '',
     due_date: '',
-    // 成本欄位
     cost_vendor_id: '',
     cost_vendor_name: '',
     cost_amount: ''
   });
 
-  // Payment form - 增加發票選項
+  // Payment form
   const [paymentForm, setPaymentForm] = useState({
     paid_amount: '',
     payment_method: '銀行轉帳',
     payment_note: '',
     send_notification: true,
-    // 新增發票選項
     invoice_action: 'auto' as 'manual' | 'auto',
     invoice_item_name: '服務費'
   });
@@ -176,7 +222,6 @@ export default function BillingPage() {
       const result = await response.json();
       if (result.data) {
         setPaymentAccounts(result.data);
-        // 設定預設帳戶
         const defaultAccount = result.data.find((a: PaymentAccount) => a.is_default);
         if (defaultAccount) {
           setForm(prev => ({ ...prev, payment_account_id: defaultAccount.id }));
@@ -187,14 +232,13 @@ export default function BillingPage() {
     }
   };
 
-  // 載入廠商列表（只有外部廠商可記入成本）
+  // 載入廠商列表
   const loadVendors = async () => {
     if (!company?.id) return;
     try {
       const response = await fetch(`/api/customers?company_id=${company.id}`);
       const result = await response.json();
       if (result.data) {
-        // 篩選出外部廠商（不含內部人員）
         setVendors(result.data.filter((c: Customer) =>
           (c.customer_type === 'vendor' || c.customer_type === 'both') &&
           !c.is_internal
@@ -205,20 +249,34 @@ export default function BillingPage() {
     }
   };
 
+  // ========== 載入週期性請款 ==========
+  const loadRecurringBillings = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/billing/recurring?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setRecurringBillings(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading recurring billings:', error);
+    }
+  };
+
   useEffect(() => {
     if (company?.id) {
       loadBillings();
       loadCustomers();
       loadPaymentAccounts();
       loadVendors();
+      loadRecurringBillings();
     }
   }, [company?.id, statusFilter]);
 
-  // 選擇客戶時自動帶入資料，並查詢上次的成本設定
+  // 選擇客戶時自動帶入資料
   const handleCustomerSelect = async (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
-      // 先設定基本客戶資料
       let newForm = {
         ...form,
         customer_id: customer.id,
@@ -232,7 +290,6 @@ export default function BillingPage() {
         cost_amount: ''
       };
 
-      // 查詢該客戶上一筆請款單的成本設定
       try {
         const response = await fetch(`/api/billing/last-cost?customer_id=${customerId}&company_id=${company?.id}`);
         const result = await response.json();
@@ -261,6 +318,28 @@ export default function BillingPage() {
         cost_vendor_id: '',
         cost_vendor_name: '',
         cost_amount: ''
+      });
+    }
+  };
+
+  // ========== 週期性請款客戶選擇 ==========
+  const handleRecurringCustomerSelect = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      setRecurringForm({
+        ...recurringForm,
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_line_group_id: customer.line_group_id || '',
+        customer_line_group_name: customer.line_group_name || ''
+      });
+    } else {
+      setRecurringForm({
+        ...recurringForm,
+        customer_id: '',
+        customer_name: '',
+        customer_line_group_id: '',
+        customer_line_group_name: ''
       });
     }
   };
@@ -314,12 +393,71 @@ export default function BillingPage() {
     setShowModal(true);
   };
 
+  // ========== 週期性請款 Modal ==========
+  const openAddRecurringModal = () => {
+    setEditingRecurring(null);
+    const defaultAccount = paymentAccounts.find(a => a.is_default);
+    setRecurringForm({
+      customer_id: '',
+      customer_name: '',
+      customer_line_group_id: '',
+      customer_line_group_name: '',
+      title: '',
+      description: '',
+      amount: '',
+      tax_amount: '0',
+      cost_amount: '',
+      cost_vendor_id: '',
+      cost_vendor_name: '',
+      payment_account_id: defaultAccount?.id || '',
+      schedule_type: 'yearly',
+      schedule_day: 1,
+      schedule_month: 1,
+      days_before_due: 14
+    });
+    setShowRecurringModal(true);
+  };
+
+  const openEditRecurringModal = (recurring: RecurringBilling) => {
+    setEditingRecurring(recurring);
+    setRecurringForm({
+      customer_id: recurring.customer_id || '',
+      customer_name: recurring.customer_name,
+      customer_line_group_id: recurring.customer_line_group_id || '',
+      customer_line_group_name: recurring.customer_line_group_name || '',
+      title: recurring.title,
+      description: recurring.description || '',
+      amount: recurring.amount.toString(),
+      tax_amount: recurring.tax_amount?.toString() || '0',
+      cost_amount: recurring.cost_amount?.toString() || '',
+      cost_vendor_id: recurring.cost_vendor_id || '',
+      cost_vendor_name: recurring.cost_vendor_name || '',
+      payment_account_id: recurring.payment_account_id || '',
+      schedule_type: recurring.schedule_type,
+      schedule_day: recurring.schedule_day,
+      schedule_month: recurring.schedule_month || 1,
+      days_before_due: recurring.days_before_due || 14
+    });
+    setShowRecurringModal(true);
+  };
+
   // 選擇成本廠商
   const handleCostVendorSelect = (vendorId: string) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (vendor) {
       setForm({
         ...form,
+        cost_vendor_id: vendor.id,
+        cost_vendor_name: vendor.name
+      });
+    }
+  };
+
+  const handleRecurringCostVendorSelect = (vendorId: string) => {
+    const vendor = vendors.find(v => v.id === vendorId);
+    if (vendor) {
+      setRecurringForm({
+        ...recurringForm,
         cost_vendor_id: vendor.id,
         cost_vendor_name: vendor.name
       });
@@ -364,22 +502,94 @@ export default function BillingPage() {
     }
   };
 
+  // ========== 儲存週期性請款 ==========
+  const handleSaveRecurring = async () => {
+    if (!company?.id) return;
+    if (!recurringForm.customer_name || !recurringForm.amount || !recurringForm.title) {
+      alert('請填寫必要欄位');
+      return;
+    }
+
+    setIsSavingRecurring(true);
+    try {
+      const url = '/api/billing/recurring';
+      const method = editingRecurring ? 'PUT' : 'POST';
+      const body = editingRecurring
+        ? { id: editingRecurring.id, ...recurringForm }
+        : { company_id: company.id, ...recurringForm };
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const result = await response.json();
+
+      if (result.success || result.data) {
+        setShowRecurringModal(false);
+        loadRecurringBillings();
+        alert(editingRecurring ? '週期性請款已更新！' : '週期性請款已建立！');
+      } else {
+        alert(result.error || '儲存失敗');
+      }
+    } catch (error) {
+      console.error('Error saving recurring billing:', error);
+      alert('儲存失敗');
+    } finally {
+      setIsSavingRecurring(false);
+    }
+  };
+
+  // 切換週期性請款狀態
+  const handleToggleRecurring = async (id: string, currentActive: boolean) => {
+    try {
+      const response = await fetch('/api/billing/recurring', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_active: !currentActive })
+      });
+      const result = await response.json();
+      if (result.success) {
+        loadRecurringBillings();
+      } else {
+        alert(result.error || '更新失敗');
+      }
+    } catch (error) {
+      console.error('Error toggling recurring:', error);
+      alert('更新失敗');
+    }
+  };
+
+  // 刪除週期性請款
+  const handleDeleteRecurring = async (id: string) => {
+    if (!confirm('確定要刪除此週期性請款？')) return;
+    try {
+      const response = await fetch(`/api/billing/recurring?id=${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        loadRecurringBillings();
+      } else {
+        alert(result.error || '刪除失敗');
+      }
+    } catch (error) {
+      console.error('Error deleting recurring:', error);
+      alert('刪除失敗');
+    }
+  };
+
   // 打開發送預覽 Modal
   const openSendPreview = async (billing: BillingRequest) => {
-    // 檢查是否有群組 ID 或個人 LINE ID
     const hasLineContact = billing.customer_line_group_id || billing.customer_line_id;
     if (!hasLineContact) {
       alert('此客戶沒有設定 LINE 群組，無法發送通知');
       return;
     }
 
-    // 取得收款帳戶資訊
     const account = paymentAccounts.find(a => a.id === billing.payment_account_id);
     const accountInfo = account
       ? `${account.bank_name} ${account.branch_name || ''}\n帳號：${account.account_number}\n戶名：${account.account_name}`
       : '（請設定收款帳戶）';
 
-    // 產生預設訊息
     const defaultMessage = `【請款通知】
 
 ${billing.customer_name} 您好，
@@ -434,7 +644,7 @@ ${accountInfo}
     }
   };
 
-  // 開啟確認收款 Modal - 更新預設值
+  // 開啟確認收款 Modal
   const openPaymentModal = (billing: BillingRequest) => {
     setConfirmingBilling(billing);
     setPaymentForm({
@@ -442,20 +652,18 @@ ${accountInfo}
       payment_method: '銀行轉帳',
       payment_note: '',
       send_notification: true,
-      // 新增發票選項預設值
       invoice_action: 'auto',
       invoice_item_name: '服務費'
     });
     setShowPaymentModal(true);
   };
 
-  // 確認收款 - 增加自動開發票邏輯
+  // 確認收款
   const handleConfirmPayment = async () => {
     if (!confirmingBilling || !paymentForm.paid_amount) return;
 
     setIsConfirming(true);
     try {
-      // 1. 先確認收款（原本的邏輯）
       const response = await fetch('/api/billing/confirm-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -470,7 +678,6 @@ ${accountInfo}
       const result = await response.json();
 
       if (result.success) {
-        // 組合提示訊息
         let message = '✅ 收款確認完成！\n\n';
         message += '📝 已自動建立收入記錄\n';
 
@@ -482,11 +689,8 @@ ${accountInfo}
           message += '📱 已發送收款通知給客戶\n';
         }
 
-        // 2. 根據選擇處理發票
         if (paymentForm.invoice_action === 'auto') {
-          // 自動開發票
           try {
-            // 取得客戶資料
             const customer = customers.find(c => c.id === confirmingBilling.customer_id);
 
             const invoiceResponse = await fetch('/api/invoices', {
@@ -528,7 +732,6 @@ ${accountInfo}
           loadBillings();
 
         } else {
-          // 手動開發票 - 跳轉
           alert(message);
           setShowPaymentModal(false);
           loadBillings();
@@ -588,6 +791,15 @@ ${accountInfo}
     }
   };
 
+  const getScheduleTypeText = (type: string) => {
+    switch (type) {
+      case 'monthly': return '每月';
+      case 'quarterly': return '每季';
+      case 'yearly': return '每年';
+      default: return type;
+    }
+  };
+
   // 統計
   const stats = {
     total: billings.length,
@@ -611,13 +823,134 @@ ${accountInfo}
           </h1>
           <p className="text-gray-500 mt-1">建立請款單、發送通知、確認收款</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="px-4 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" /> 新增請款單
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowRecurringList(!showRecurringList)}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 ${showRecurringList
+                ? 'bg-purple-600 text-white'
+                : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+              }`}
+          >
+            <Repeat className="w-4 h-4" />
+            週期請款 {recurringBillings.length > 0 && `(${recurringBillings.filter(r => r.is_active).length})`}
+          </button>
+          <button
+            onClick={openAddModal}
+            className="px-4 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> 新增請款單
+          </button>
+        </div>
       </div>
+
+      {/* 週期性請款列表 */}
+      {showRecurringList && (
+        <div className="bg-purple-50 rounded-xl border border-purple-200 p-4 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-purple-800 flex items-center gap-2">
+              <Repeat className="w-5 h-5" />
+              週期性請款
+            </h2>
+            <button
+              onClick={openAddRecurringModal}
+              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1 text-sm"
+            >
+              <Plus className="w-4 h-4" /> 新增
+            </button>
+          </div>
+
+          {recurringBillings.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full bg-white rounded-lg">
+                <thead className="bg-purple-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-purple-700">客戶</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-purple-700">項目</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-purple-700">金額</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">週期</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">下次執行</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">狀態</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-purple-100">
+                  {recurringBillings.map((recurring) => (
+                    <tr key={recurring.id} className="hover:bg-purple-50">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{recurring.customer_name}</div>
+                        {recurring.customer_line_group_name && (
+                          <div className="text-xs text-green-600 flex items-center gap-1">
+                            <MessageCircle className="w-3 h-3" /> {recurring.customer_line_group_name}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">{recurring.title}</td>
+                      <td className="px-4 py-3 text-right font-medium">
+                        NT$ {recurring.amount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm text-purple-600">
+                          {getScheduleTypeText(recurring.schedule_type)}
+                          {recurring.schedule_type === 'yearly' && ` ${recurring.schedule_month}/${recurring.schedule_day}`}
+                          {recurring.schedule_type === 'monthly' && ` ${recurring.schedule_day}日`}
+                          {recurring.schedule_type === 'quarterly' && ` ${recurring.schedule_day}日`}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm">
+                        {recurring.next_run_at
+                          ? new Date(recurring.next_run_at).toLocaleDateString('zh-TW')
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {recurring.is_active ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">
+                            啟用中
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                            已暫停
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleToggleRecurring(recurring.id, recurring.is_active)}
+                            className={`p-1.5 rounded ${recurring.is_active ? 'text-yellow-600 hover:bg-yellow-50' : 'text-green-600 hover:bg-green-50'}`}
+                            title={recurring.is_active ? '暫停' : '啟用'}
+                          >
+                            {recurring.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => openEditRecurringModal(recurring)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                            title="編輯"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRecurring(recurring.id)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                            title="刪除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-purple-600">
+              <Repeat className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <p>尚無週期性請款</p>
+              <p className="text-sm text-purple-500">設定後系統會自動產生請款單並發送通知</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -656,8 +989,8 @@ ${accountInfo}
                 key={status}
                 onClick={() => setStatusFilter(status)}
                 className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === status
-                    ? 'bg-brand-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-brand-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
               >
                 {status === 'all' ? '全部' : getStatusText(status)}
@@ -1043,7 +1376,193 @@ ${accountInfo}
         </div>
       )}
 
-      {/* Payment Confirmation Modal - 新增發票選項 */}
+      {/* 週期性請款 Modal */}
+      {showRecurringModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-purple-600" />
+                {editingRecurring ? '編輯週期性請款' : '新增週期性請款'}
+              </h3>
+              <button onClick={() => setShowRecurringModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* 客戶選擇 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">客戶 *</label>
+                <select
+                  value={recurringForm.customer_id}
+                  onChange={(e) => handleRecurringCustomerSelect(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">選擇客戶...</option>
+                  {customers.filter(c => ['customer', 'both'].includes(c.customer_type)).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.line_group_id ? '📱' : ''}
+                    </option>
+                  ))}
+                </select>
+                {recurringForm.customer_line_group_id && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <MessageCircle className="w-3 h-3" /> LINE 群組：{recurringForm.customer_line_group_name}
+                  </p>
+                )}
+              </div>
+
+              {/* 請款標題 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款項目 *</label>
+                <input
+                  type="text"
+                  value={recurringForm.title}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
+                  placeholder="例：網站主機維護費"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* 金額 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款金額 *</label>
+                <input
+                  type="number"
+                  value={recurringForm.amount}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                  placeholder="0"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* 週期設定 */}
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">週期類型 *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'monthly', label: '每月' },
+                    { value: 'quarterly', label: '每季' },
+                    { value: 'yearly', label: '每年' }
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setRecurringForm({ ...recurringForm, schedule_type: type.value as any })}
+                      className={`px-4 py-2 rounded-lg border text-sm ${recurringForm.schedule_type === type.value
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 日期設定 */}
+              <div className="grid grid-cols-2 gap-4">
+                {recurringForm.schedule_type === 'yearly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">月份</label>
+                    <select
+                      value={recurringForm.schedule_month}
+                      onChange={(e) => setRecurringForm({ ...recurringForm, schedule_month: parseInt(e.target.value) })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                        <option key={month} value={month}>{month} 月</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
+                  <select
+                    value={recurringForm.schedule_day}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, schedule_day: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  >
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                      <option key={day} value={day}>{day} 日</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">付款期限（天）</label>
+                  <input
+                    type="number"
+                    value={recurringForm.days_before_due}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, days_before_due: parseInt(e.target.value) || 14 })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* 成本資訊 */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">成本資訊（選填）</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">外包廠商</label>
+                    <select
+                      value={recurringForm.cost_vendor_id}
+                      onChange={(e) => handleRecurringCostVendorSelect(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">選擇外包廠商...</option>
+                      {vendors.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">成本金額</label>
+                    <input
+                      type="number"
+                      value={recurringForm.cost_amount}
+                      onChange={(e) => setRecurringForm({ ...recurringForm, cost_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                      placeholder="0"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 預覽 */}
+              <div className="bg-purple-50 rounded-lg p-3 text-sm">
+                <p className="font-medium text-purple-800 mb-1">排程預覽</p>
+                <p className="text-purple-600">
+                  {recurringForm.schedule_type === 'yearly' && `每年 ${recurringForm.schedule_month} 月 ${recurringForm.schedule_day} 日`}
+                  {recurringForm.schedule_type === 'quarterly' && `每季 ${recurringForm.schedule_day} 日`}
+                  {recurringForm.schedule_type === 'monthly' && `每月 ${recurringForm.schedule_day} 日`}
+                  {' '}自動產生請款單並發送 LINE 通知
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowRecurringModal(false)}
+                disabled={isSavingRecurring}
+                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveRecurring}
+                disabled={isSavingRecurring}
+                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSavingRecurring && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {isSavingRecurring ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Confirmation Modal */}
       {showPaymentModal && confirmingBilling && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -1114,7 +1633,7 @@ ${accountInfo}
                 </label>
               )}
 
-              {/* 發票開立選項 - 新增區塊 */}
+              {/* 發票開立選項 */}
               <div className="border-t pt-4 mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
                   <Receipt className="w-4 h-4" />
@@ -1123,8 +1642,8 @@ ${accountInfo}
 
                 <div className="space-y-2">
                   <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'auto'
-                      ? 'border-brand-primary-500 bg-brand-primary-50'
-                      : 'border-gray-200 hover:bg-gray-50'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:bg-gray-50'
                     }`}>
                     <input
                       type="radio"
@@ -1141,8 +1660,8 @@ ${accountInfo}
                   </label>
 
                   <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'manual'
-                      ? 'border-brand-primary-500 bg-brand-primary-50'
-                      : 'border-gray-200 hover:bg-gray-50'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:bg-gray-50'
                     }`}>
                     <input
                       type="radio"
@@ -1159,7 +1678,6 @@ ${accountInfo}
                   </label>
                 </div>
 
-                {/* 自動開立時顯示品項輸入 */}
                 {paymentForm.invoice_action === 'auto' && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-gray-700 mb-1">發票品項</label>
