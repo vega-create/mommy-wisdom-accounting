@@ -92,10 +92,12 @@ export default function BillingPage() {
   const searchParams = useSearchParams();
 
   const url_status = searchParams.get('status') || 'all';
+  const url_tab = searchParams.get('tab') || '';
 
-  const updateURL = (statusFilter: string) => {
+  const updateURL = (statusFilter: string, tab?: string) => {
     const params = new URLSearchParams();
     if (statusFilter) params.set('status', statusFilter);
+    if (tab) params.set('tab', tab);
     router.replace(`/dashboard/billing?${params.toString()}`, { scroll: false });
   };
 
@@ -130,7 +132,14 @@ export default function BillingPage() {
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringBilling | null>(null);
   const [isSavingRecurring, setIsSavingRecurring] = useState(false);
-  const [showRecurringList, setShowRecurringList] = useState(false);
+  const [showRecurringList, setShowRecurringList] = useState(url_tab === 'recurring');
+
+  // 切換週期性請款列表顯示
+  const toggleRecurringList = () => {
+    const newShow = !showRecurringList;
+    setShowRecurringList(newShow);
+    updateURL(statusFilter, newShow ? 'recurring' : '');
+  };
 
   const [recurringForm, setRecurringForm] = useState({
     customer_id: '',
@@ -861,7 +870,7 @@ ${accountInfo}
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowRecurringList(!showRecurringList)}
+            onClick={toggleRecurringList}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 ${showRecurringList
               ? 'bg-purple-600 text-white'
               : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
