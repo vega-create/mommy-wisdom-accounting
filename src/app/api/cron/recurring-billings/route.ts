@@ -157,19 +157,19 @@ export async function GET(request: NextRequest) {
                         });
 
                         // 取得公司的 LINE 設定
-                        const { data: company } = await supabase
-                            .from('companies')
-                            .select('line_channel_access_token')
-                            .eq('id', recurring.company_id)
+                        const { data: lineSetting } = await supabase
+                            .from('acct_line_settings')
+                            .select('channel_access_token')
+                            .eq('company_id', recurring.company_id)
                             .single();
 
-                        if (company?.line_channel_access_token) {
+                        if (lineSetting?.channel_access_token) {
                             // 發送 LINE 訊息
                             const lineResponse = await fetch('https://api.line.me/v2/bot/message/push', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${company.line_channel_access_token}`
+                                    'Authorization': `Bearer ${lineSetting.channel_access_token}`
                                 },
                                 body: JSON.stringify({
                                     to: recurring.customer_line_group_id,
