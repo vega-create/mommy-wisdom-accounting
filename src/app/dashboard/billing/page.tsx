@@ -7,7 +7,7 @@ import {
   FileText, Plus, Send, Check, Clock, AlertCircle,
   Edit2, Trash2, RefreshCw, DollarSign, Calendar,
   User, Building, X, MessageCircle, CheckCircle, Receipt,
-  Repeat, Play, Pause
+  Repeat, Play, Pause, Download, Search
 } from 'lucide-react';
 
 interface Customer {
@@ -107,6 +107,11 @@ export default function BillingPage() {
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>(url_status);
+
+  // 篩選與搜尋
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -845,6 +850,53 @@ ${accountInfo}
     }
   };
 
+  // 篩選後的請款單
+  const filteredBillings = billings.filter(b => {
+    // 搜尋關鍵字
+    if (searchKeyword) {
+      const keyword = searchKeyword.toLowerCase();
+      const matchNumber = b.billing_number?.toLowerCase().includes(keyword);
+      const matchCustomer = b.customer_name?.toLowerCase().includes(keyword);
+      const matchTitle = b.title?.toLowerCase().includes(keyword);
+      if (!matchNumber && !matchCustomer && !matchTitle) return false;
+    }
+
+    // 時間篩選
+    if (startDate && b.created_at < startDate) return false;
+    if (endDate && b.created_at > endDate + 'T23:59:59') return false;
+
+    return true;
+  });
+
+  // 匯出 CSV
+  const exportCSV = () => {
+    const headers = ['請款單號', '日期', '客戶', '項目', '金額', '成本', '毛利', '到期日', '狀態'];
+    const rows = filteredBillings.map(b => [
+      b.billing_number || '',
+      b.created_at?.split('T')[0] || '',
+      b.customer_name || '',
+      b.title || '',
+      b.total_amount || 0,
+      b.cost_amount || 0,
+      (b.total_amount || 0) - (b.cost_amount || 0),
+      b.due_date || '',
+      getStatusText(b.status),
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `請款單_${startDate || 'all'}_${endDate || 'all'}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   // 統計
   const stats = {
     total: billings.length,
@@ -1027,28 +1079,73 @@ ${accountInfo}
 
       {/* Filter & Table */}
       <div className="bg-white rounded-xl border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <div className="flex gap-2">
-            {['all', 'draft', 'sent', 'paid', 'overdue'].map((status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === status
-                  ? 'bg-brand-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {status === 'all' ? '全部' : getStatusText(status)}
-              </button>
-            ))}
+        <div className="p-4 border-b border-gray-200 space-y-3">
+          {/* 第一行：狀態篩選 + 重整 */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {['all', 'draft', 'sent', 'paid', 'overdue'].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === status
+                    ? 'bg-brand-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                >
+                  {status === 'all' ? '全部' : getStatusText(status)}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={loadBillings}
+              disabled={isLoading}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
-          <button
-            onClick={loadBillings}
-            disabled={isLoading}
-            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
+
+          {/* 第二行：搜尋 + 時間篩選 + 匯出 */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* 搜尋 */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="搜尋單號、客戶、項目..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+
+            {/* 時間篩選 */}
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+              <span className="text-gray-400">~</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+
+            {/* 匯出 */}
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+            >
+              <Download className="w-4 h-4" />
+              匯出 ({filteredBillings.length})
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -1067,7 +1164,7 @@ ${accountInfo}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {billings.map((billing) => (
+              {filteredBillings.map((billing) => (
                 <tr key={billing.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div className="font-mono text-sm">{billing.billing_number || '-'}</div>
@@ -1204,7 +1301,7 @@ ${accountInfo}
           </table>
         </div>
 
-        {billings.length === 0 && !isLoading && (
+        {filteredBillings.length === 0 && !isLoading && (
           <div className="text-center py-12 text-gray-500">
             <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p>尚無請款單</p>
