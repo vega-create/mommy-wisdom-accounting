@@ -827,8 +827,8 @@ ${accountInfo}
           <button
             onClick={() => setShowRecurringList(!showRecurringList)}
             className={`px-4 py-2 rounded-lg flex items-center gap-2 ${showRecurringList
-                ? 'bg-purple-600 text-white'
-                : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
+              ? 'bg-purple-600 text-white'
+              : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
               }`}
           >
             <Repeat className="w-4 h-4" />
@@ -886,7 +886,7 @@ ${accountInfo}
                       </td>
                       <td className="px-4 py-3 text-sm">{recurring.title}</td>
                       <td className="px-4 py-3 text-right font-medium">
-                        NT$ {recurring.amount.toLocaleString()}
+                        NT$ {(recurring.amount || 0).toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="text-sm text-purple-600">
