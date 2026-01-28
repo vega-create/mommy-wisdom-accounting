@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+
+const LINE_API_URL = 'https://api.line.me/v2/bot/message/push';
 
 // 計算下次執行時間
 function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleMonth?: number): Date {
@@ -12,9 +14,7 @@ function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleM
 
     if (scheduleType === 'monthly') {
         nextRun.setDate(scheduleDay);
-        if (nextRun <= now) {
-            nextRun.setMonth(nextRun.getMonth() + 1);
-        }
+        nextRun.setMonth(nextRun.getMonth() + 1);
     } else if (scheduleType === 'quarterly') {
         const currentMonth = now.getMonth();
         const quarterMonths = [0, 3, 6, 9];
@@ -22,9 +22,7 @@ function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleM
         if (targetMonth === undefined) {
             targetMonth = 0;
             nextRun.setFullYear(nextRun.getFullYear() + 1);
-        }
-        nextRun.setMonth(targetMonth, scheduleDay);
-        if (nextRun <= now) {
+        } else {
             const nextQuarterIndex = quarterMonths.indexOf(targetMonth) + 1;
             if (nextQuarterIndex >= quarterMonths.length) {
                 nextRun.setFullYear(nextRun.getFullYear() + 1);
@@ -35,156 +33,210 @@ function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleM
         }
     } else if (scheduleType === 'yearly') {
         nextRun.setMonth((scheduleMonth || 1) - 1, scheduleDay);
-        if (nextRun <= now) {
-            nextRun.setFullYear(nextRun.getFullYear() + 1);
-        }
+        nextRun.setFullYear(nextRun.getFullYear() + 1);
     }
 
     return nextRun;
 }
 
-export async function GET(request: NextRequest) {
+// 替換訊息模板中的變數
+function replaceMessageVariables(
+    template: string,
+    data: {
+        customerName: string;
+        title: string;
+        amount: number;
+        dueDate: string;
+        paymentAccount?: string;
+    }
+): string {
+    return template
+        .replace(/\{客戶名稱\}/g, data.customerName)
+        .replace(/\{請款項目\}/g, data.title)
+        .replace(/\{金額\}/g, data.amount.toLocaleString())
+        .replace(/\{到期日\}/g, data.dueDate)
+        .replace(/\{匯款帳戶\}/g, data.paymentAccount || '請洽詢客服');
+}
+
+// 發送 LINE 訊息
+async function sendLineMessage(accessToken: string, to: string, text: string) {
+    const response = await fetch(LINE_API_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+            to,
+            messages: [{ type: 'text', text }]
+        }),
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'LINE API 錯誤');
+    }
+
+    return response;
+}
+
+// Cron Job - 自動執行週期性請款
+export async function GET() {
     try {
         const supabase = await createClient();
-        const { searchParams } = new URL(request.url);
-        const companyId = searchParams.get('company_id');
+        const now = new Date();
 
-        if (!companyId) {
-            return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
-        }
-
-        const { data, error } = await supabase
+        // 查詢所有到期的週期性請款（不需要 company_id，查詢所有公司）
+        const { data: dueRecurrings, error: fetchError } = await supabase
             .from('acct_recurring_billings')
             .select('*')
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
+            .eq('is_active', true)
+            .lte('next_run_at', now.toISOString());
 
-        if (error) throw error;
-
-        return NextResponse.json({ data: data || [] });
-    } catch (error) {
-        console.error('Error fetching recurring billings:', error);
-        return NextResponse.json({ error: '取得週期性請款失敗' }, { status: 500 });
-    }
-}
-
-export async function POST(request: NextRequest) {
-    try {
-        const supabase = await createClient();
-        const body = await request.json();
-        const {
-            company_id, customer_id, customer_name, customer_line_group_id,
-            customer_line_group_name, title, description, amount, tax_amount = 0,
-            cost_amount, cost_vendor_id, cost_vendor_name, payment_account_id,
-            schedule_type, schedule_day, schedule_month, days_before_due = 14,
-            auto_send = true, message_template
-        } = body;
-
-        if (!company_id || !customer_name || !title || !amount || !schedule_type || !schedule_day) {
-            return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
+        if (fetchError) {
+            console.error('[CRON] 查詢週期性請款錯誤:', fetchError);
+            return NextResponse.json({ error: '查詢失敗' }, { status: 500 });
         }
 
-        const next_run_at = calculateNextRunAt(schedule_type, schedule_day, schedule_month);
+        console.log(`[CRON] 找到 ${dueRecurrings?.length || 0} 個待執行週期性請款`);
 
-        const { data, error } = await supabase
-            .from('acct_recurring_billings')
-            .insert({
-                company_id,
-                customer_id: customer_id || null,
-                customer_name,
-                customer_line_group_id: customer_line_group_id || null,
-                customer_line_group_name: customer_line_group_name || null,
-                title,
-                description: description || null,
-                amount: parseFloat(amount),
-                tax_amount: parseFloat(tax_amount || 0),
-                cost_amount: cost_amount ? parseFloat(cost_amount) : null,
-                cost_vendor_id: cost_vendor_id || null,
-                cost_vendor_name: cost_vendor_name || null,
-                payment_account_id: payment_account_id || null,
-                schedule_type,
-                schedule_day,
-                schedule_month: schedule_month || null,
-                days_before_due,
-                next_run_at: next_run_at.toISOString(),
-                is_active: true,
-                auto_send: auto_send,
-                message_template: message_template || null
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        return NextResponse.json({ success: true, data });
-    } catch (error) {
-        console.error('Error creating recurring billing:', error);
-        return NextResponse.json({ error: '新增週期性請款失敗' }, { status: 500 });
-    }
-}
-
-export async function PUT(request: NextRequest) {
-    try {
-        const supabase = await createClient();
-        const body = await request.json();
-        const { id, ...updates } = body;
-
-        if (!id) {
-            return NextResponse.json({ error: '缺少 id' }, { status: 400 });
+        if (!dueRecurrings || dueRecurrings.length === 0) {
+            return NextResponse.json({ success: true, created: 0, sent: 0, total: 0 });
         }
 
-        if (updates.schedule_type || updates.schedule_day || updates.schedule_month) {
-            const { data: current } = await supabase
-                .from('acct_recurring_billings')
-                .select('schedule_type, schedule_day, schedule_month')
-                .eq('id', id)
-                .single();
+        let created = 0;
+        let sent = 0;
 
-            const scheduleType = updates.schedule_type || current?.schedule_type;
-            const scheduleDay = updates.schedule_day || current?.schedule_day;
-            const scheduleMonth = updates.schedule_month || current?.schedule_month;
+        for (const recurring of dueRecurrings) {
+            try {
+                // 計算到期日
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + (recurring.days_before_due || 14));
+                const dueDateStr = dueDate.toISOString().split('T')[0];
 
-            updates.next_run_at = calculateNextRunAt(scheduleType, scheduleDay, scheduleMonth).toISOString();
+                // 產生請款單號
+                const year = new Date().getFullYear();
+                const month = String(new Date().getMonth() + 1).padStart(2, '0');
+                const billingNumber = `BIL${year}${month}${Date.now().toString().slice(-4)}`;
+
+                // 決定狀態：auto_send 為 true 則直接發送，否則存為草稿
+                const status = recurring.auto_send ? 'sent' : 'draft';
+
+                // 建立請款單
+                const { data: newBilling, error: insertError } = await supabase
+                    .from('acct_billing_requests')
+                    .insert({
+                        company_id: recurring.company_id,
+                        billing_number: billingNumber,
+                        customer_id: recurring.customer_id,
+                        customer_name: recurring.customer_name,
+                        customer_line_group_id: recurring.customer_line_group_id,
+                        customer_line_group_name: recurring.customer_line_group_name,
+                        title: recurring.title,
+                        description: recurring.description,
+                        amount: recurring.amount,
+                        tax_amount: recurring.tax_amount || 0,
+                        total_amount: (recurring.amount || 0) + (recurring.tax_amount || 0),
+                        cost_amount: recurring.cost_amount,
+                        cost_vendor_id: recurring.cost_vendor_id,
+                        cost_vendor_name: recurring.cost_vendor_name,
+                        payment_account_id: recurring.payment_account_id,
+                        due_date: dueDateStr,
+                        status: status,
+                        recurring_billing_id: recurring.id,
+                        line_sent_at: recurring.auto_send ? new Date().toISOString() : null
+                    })
+                    .select()
+                    .single();
+
+                if (insertError) {
+                    console.error(`[CRON] 建立請款單失敗 (${recurring.id}):`, insertError);
+                    continue;
+                }
+
+                created++;
+                console.log(`[CRON] 建立請款單成功: ${billingNumber}`);
+
+                // 如果開啟自動發送且有 LINE 群組，發送通知
+                if (recurring.auto_send && recurring.customer_line_group_id && recurring.message_template) {
+                    try {
+                        // 取得 LINE token
+                        const { data: lineSettings } = await supabase
+                            .from('acct_line_settings')
+                            .select('channel_access_token')
+                            .eq('company_id', recurring.company_id)
+                            .eq('is_active', true)
+                            .single();
+
+                        if (lineSettings?.channel_access_token) {
+                            // 取得收款帳戶資訊
+                            let paymentAccountInfo = '';
+                            if (recurring.payment_account_id) {
+                                const { data: account } = await supabase
+                                    .from('acct_payment_accounts')
+                                    .select('bank_name, branch_name, account_number, account_name')
+                                    .eq('id', recurring.payment_account_id)
+                                    .single();
+
+                                if (account) {
+                                    paymentAccountInfo = `${account.bank_name} ${account.branch_name || ''}\n戶名：${account.account_name}\n帳號：${account.account_number}`;
+                                }
+                            }
+
+                            // 替換變數
+                            const message = replaceMessageVariables(recurring.message_template, {
+                                customerName: recurring.customer_name,
+                                title: recurring.title,
+                                amount: (recurring.amount || 0) + (recurring.tax_amount || 0),
+                                dueDate: dueDateStr,
+                                paymentAccount: paymentAccountInfo
+                            });
+
+                            await sendLineMessage(
+                                lineSettings.channel_access_token,
+                                recurring.customer_line_group_id,
+                                message
+                            );
+
+                            sent++;
+                            console.log(`[CRON] LINE 發送成功: ${recurring.customer_name}`);
+                        }
+                    } catch (lineError) {
+                        console.error(`[CRON] LINE 發送失敗 (${recurring.id}):`, lineError);
+                    }
+                }
+
+                // 更新下次執行時間
+                const nextRunAt = calculateNextRunAt(
+                    recurring.schedule_type,
+                    recurring.schedule_day,
+                    recurring.schedule_month
+                );
+
+                await supabase
+                    .from('acct_recurring_billings')
+                    .update({
+                        next_run_at: nextRunAt.toISOString(),
+                        last_run_at: now.toISOString(),
+                        run_count: (recurring.run_count || 0) + 1,
+                        updated_at: now.toISOString()
+                    })
+                    .eq('id', recurring.id);
+
+            } catch (error) {
+                console.error(`[CRON] 處理週期性請款錯誤 (${recurring.id}):`, error);
+            }
         }
 
-        updates.updated_at = new Date().toISOString();
+        return NextResponse.json({
+            success: true,
+            created,
+            sent,
+            total: dueRecurrings.length
+        });
 
-        const { data, error } = await supabase
-            .from('acct_recurring_billings')
-            .update(updates)
-            .eq('id', id)
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        return NextResponse.json({ success: true, data });
     } catch (error) {
-        console.error('Error updating recurring billing:', error);
-        return NextResponse.json({ error: '更新週期性請款失敗' }, { status: 500 });
-    }
-}
-
-export async function DELETE(request: NextRequest) {
-    try {
-        const supabase = await createClient();
-        const { searchParams } = new URL(request.url);
-        const id = searchParams.get('id');
-
-        if (!id) {
-            return NextResponse.json({ error: '缺少 id' }, { status: 400 });
-        }
-
-        const { error } = await supabase
-            .from('acct_recurring_billings')
-            .delete()
-            .eq('id', id);
-
-        if (error) throw error;
-
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Error deleting recurring billing:', error);
-        return NextResponse.json({ error: '刪除週期性請款失敗' }, { status: 500 });
+        console.error('[CRON] 週期性請款執行錯誤:', error);
+        return NextResponse.json({ error: '執行失敗' }, { status: 500 });
     }
 }
