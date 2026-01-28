@@ -253,6 +253,13 @@ export default function TransactionsPage() {
       ...formData,
       has_fee: formData.has_fee,
       fee_amount: formData.has_fee ? formData.fee_amount : 0,
+      // 清理空字串為 null，避免 UUID 錯誤
+      bank_account_id: formData.bank_account_id || null,
+      from_account_id: formData.from_account_id || null,
+      to_account_id: formData.to_account_id || null,
+      category_id: formData.category_id || null,
+      customer_id: formData.customer_id || null,
+      voucher_id: formData.voucher_id || null,
     };
 
     if (editingTransaction) {
