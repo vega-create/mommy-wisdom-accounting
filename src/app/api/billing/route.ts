@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       .from('acct_billing_requests')
       .select(`
         *,
-        customer:acct_customers(*),
+        customer:acct_customers!acct_billing_requests_customer_id_fkey(*),
         payment_account:acct_payment_accounts(*)
       `)
       .eq('company_id', companyId)
