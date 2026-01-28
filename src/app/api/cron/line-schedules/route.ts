@@ -3,6 +3,17 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// ✅ 變數替換函數
+function replaceVariables(content: string, variables: Record<string, string> | null): string {
+  if (!content || !variables) return content;
+
+  let result = content;
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value || '');
+  }
+  return result;
+}
+
 export async function POST() {
   try {
     const supabase = await createClient();
@@ -40,11 +51,14 @@ export async function POST() {
         }
 
         // 決定訊息內容
-        const messageContent = schedule.custom_content || schedule.template?.content;
+        let messageContent = schedule.custom_content || schedule.template?.content;
         if (!messageContent) {
           console.log(`[CRON] 排程 ${schedule.id} 無訊息內容，跳過`);
           continue;
         }
+
+        // ✅ 替換變數
+        messageContent = replaceVariables(messageContent, schedule.variables);
 
         // 發送 LINE 訊息
         const response = await fetch('https://api.line.me/v2/bot/message/push', {
@@ -69,7 +83,7 @@ export async function POST() {
           // 更新排程狀態
           await supabase
             .from('acct_line_schedules')
-            .update({ 
+            .update({
               last_run_at: now.toISOString(),
               next_run_at: nextRunAt?.toISOString() || null,
               run_count: (schedule.run_count || 0) + 1,
@@ -77,7 +91,7 @@ export async function POST() {
             })
             .eq('id', schedule.id);
 
-          // 記錄發送歷史
+          // 記錄發送歷史（✅ 記錄替換後的內容）
           await supabase
             .from('acct_line_messages')
             .insert({
@@ -111,15 +125,15 @@ export async function POST() {
 // 計算下次執行時間
 function calculateNextRunAt(schedule: any): Date | null {
   if (schedule.schedule_type === 'once') return null;
-  
+
   if (!schedule.schedule_time) return null;
-  
+
   const [hours, minutes] = schedule.schedule_time.split(':').map(Number);
   let nextRun = new Date();
   nextRun.setUTCHours(hours - 8, minutes, 0, 0); // 台灣時間轉 UTC
-  
+
   const now = new Date();
-  
+
   switch (schedule.schedule_type) {
     case 'daily':
       nextRun.setDate(nextRun.getDate() + 1);
@@ -149,7 +163,7 @@ function calculateNextRunAt(schedule: any): Date | null {
       nextRun.setFullYear(nextRun.getFullYear() + 1);
       break;
   }
-  
+
   return nextRun;
 }
 
