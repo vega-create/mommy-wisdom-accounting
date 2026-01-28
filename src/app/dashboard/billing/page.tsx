@@ -1574,6 +1574,23 @@ ${accountInfo}
                 </div>
               </div>
 
+              {/* 收款帳戶 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">收款帳戶</label>
+                <select
+                  value={recurringForm.payment_account_id}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, payment_account_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">選擇收款帳戶...</option>
+                  {paymentAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.bank_name} {a.account_number} {a.is_default ? '(預設)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* 預覽 */}
               <div className="bg-purple-50 rounded-lg p-3 text-sm">
                 <p className="font-medium text-purple-800 mb-1">排程預覽</p>

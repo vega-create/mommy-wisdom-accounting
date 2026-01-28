@@ -7,9 +7,9 @@ import { createClient } from '@/lib/supabase/server';
 function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleMonth?: number): Date {
   const now = new Date();
   let nextRun = new Date();
-  
+
   nextRun.setUTCHours(1, 0, 0, 0);
-  
+
   if (scheduleType === 'monthly') {
     nextRun.setDate(scheduleDay);
     if (nextRun <= now) {
@@ -39,7 +39,7 @@ function calculateNextRunAt(scheduleType: string, scheduleDay: number, scheduleM
       nextRun.setFullYear(nextRun.getFullYear() + 1);
     }
   }
-  
+
   return nextRun;
 }
 
@@ -76,7 +76,8 @@ export async function POST(request: NextRequest) {
       company_id, customer_id, customer_name, customer_line_group_id,
       customer_line_group_name, title, description, amount, tax_amount = 0,
       cost_amount, cost_vendor_id, cost_vendor_name, payment_account_id,
-      schedule_type, schedule_day, schedule_month, days_before_due = 14
+      schedule_type, schedule_day, schedule_month, days_before_due = 14,
+      auto_send = true, message_template
     } = body;
 
     if (!company_id || !customer_name || !title || !amount || !schedule_type || !schedule_day) {
@@ -106,7 +107,9 @@ export async function POST(request: NextRequest) {
         schedule_month: schedule_month || null,
         days_before_due,
         next_run_at: next_run_at.toISOString(),
-        is_active: true
+        is_active: true,
+        auto_send: auto_send,
+        message_template: message_template || null
       })
       .select()
       .single();
