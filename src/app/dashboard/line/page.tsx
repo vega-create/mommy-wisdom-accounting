@@ -59,6 +59,7 @@ interface LineSchedule {
   template_id?: string;
   template?: { id: string; name: string };
   custom_content?: string;
+  variables?: Record<string, string>;
   schedule_type: 'once' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'twice_monthly' | 'yearly';
   scheduled_at?: string;
   schedule_time?: string;
@@ -437,6 +438,12 @@ export default function LinePage() {
       schedule_day_of_month_2: schedule.schedule_day_of_month_2 || 15,
       schedule_month: schedule.schedule_month || 1
     });
+    // ✅ 載入已儲存的變數
+    if (schedule.variables && typeof schedule.variables === 'object') {
+      setScheduleVariables(schedule.variables);
+    } else {
+      setScheduleVariables({});
+    }
     setShowScheduleModal(true);
   };
 
