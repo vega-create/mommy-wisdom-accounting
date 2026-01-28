@@ -382,8 +382,8 @@ export default function BillingPage() {
       title: billing.title,
       description: billing.description || '',
       billing_month: billing.billing_month || '',
-      amount: billing.amount.toString(),
-      tax_amount: billing.tax_amount.toString(),
+      amount: (billing.amount || 0).toString(),
+      tax_amount: (billing.tax_amount || 0).toString(),
       payment_account_id: billing.payment_account?.id || '',
       due_date: billing.due_date,
       cost_vendor_id: billing.cost_vendor_id || '',
@@ -427,8 +427,8 @@ export default function BillingPage() {
       customer_line_group_name: recurring.customer_line_group_name || '',
       title: recurring.title,
       description: recurring.description || '',
-      amount: recurring.amount.toString(),
-      tax_amount: recurring.tax_amount?.toString() || '0',
+      amount: (recurring.amount || 0).toString(),
+      tax_amount: (recurring.tax_amount || 0).toString(),
       cost_amount: recurring.cost_amount?.toString() || '',
       cost_vendor_id: recurring.cost_vendor_id || '',
       cost_vendor_name: recurring.cost_vendor_name || '',
@@ -596,7 +596,7 @@ ${billing.customer_name} 您好，
 
 ${billing.billing_month ? `${billing.billing_month.replace('-', '年')}月` : ''}${billing.title}費用請款如下：
 
-請款金額：NT$ ${billing.total_amount?.toLocaleString() || billing.amount?.toLocaleString()}
+請款金額：NT$ ${(billing.total_amount || billing.amount || 0).toLocaleString()}
 付款期限：${new Date(billing.due_date).toLocaleDateString('zh-TW')}
 
 匯款資訊：
@@ -648,7 +648,7 @@ ${accountInfo}
   const openPaymentModal = (billing: BillingRequest) => {
     setConfirmingBilling(billing);
     setPaymentForm({
-      paid_amount: billing.total_amount.toString(),
+      paid_amount: (billing.total_amount || 0).toString(),
       payment_method: '銀行轉帳',
       payment_note: '',
       send_notification: true,
@@ -807,9 +807,9 @@ ${accountInfo}
     sent: billings.filter(b => b.status === 'sent').length,
     paid: billings.filter(b => b.status === 'paid').length,
     overdue: billings.filter(b => b.status === 'overdue').length,
-    totalAmount: billings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + b.total_amount, 0),
-    paidAmount: billings.filter(b => b.status === 'paid').reduce((sum, b) => sum + (b.paid_amount || b.total_amount), 0),
-    pendingAmount: billings.filter(b => ['sent', 'overdue'].includes(b.status)).reduce((sum, b) => sum + b.total_amount, 0)
+    totalAmount: billings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + (b.total_amount || 0), 0),
+    paidAmount: billings.filter(b => b.status === 'paid').reduce((sum, b) => sum + (b.paid_amount || b.total_amount || 0), 0),
+    pendingAmount: billings.filter(b => ['sent', 'overdue'].includes(b.status)).reduce((sum, b) => sum + (b.total_amount || 0), 0)
   };
 
   return (
@@ -877,23 +877,23 @@ ${accountInfo}
                   {recurringBillings.map((recurring) => (
                     <tr key={recurring.id} className="hover:bg-purple-50">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{recurring.customer_name}</div>
+                        <div className="font-medium">{recurring.customer_name || '-'}</div>
                         {recurring.customer_line_group_name && (
                           <div className="text-xs text-green-600 flex items-center gap-1">
                             <MessageCircle className="w-3 h-3" /> {recurring.customer_line_group_name}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm">{recurring.title}</td>
+                      <td className="px-4 py-3 text-sm">{recurring.title || '-'}</td>
                       <td className="px-4 py-3 text-right font-medium">
                         NT$ {(recurring.amount || 0).toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="text-sm text-purple-600">
                           {getScheduleTypeText(recurring.schedule_type)}
-                          {recurring.schedule_type === 'yearly' && ` ${recurring.schedule_month}/${recurring.schedule_day}`}
-                          {recurring.schedule_type === 'monthly' && ` ${recurring.schedule_day}日`}
-                          {recurring.schedule_type === 'quarterly' && ` ${recurring.schedule_day}日`}
+                          {recurring.schedule_type === 'yearly' && ` ${recurring.schedule_month || 1}/${recurring.schedule_day || 1}`}
+                          {recurring.schedule_type === 'monthly' && ` ${recurring.schedule_day || 1}日`}
+                          {recurring.schedule_type === 'quarterly' && ` ${recurring.schedule_day || 1}日`}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center text-sm">
@@ -957,14 +957,14 @@ ${accountInfo}
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="text-sm text-gray-500 mb-1">待收款金額</div>
           <div className="text-2xl font-bold text-orange-600">
-            NT$ {stats.pendingAmount.toLocaleString()}
+            NT$ {(stats.pendingAmount || 0).toLocaleString()}
           </div>
           <div className="text-xs text-gray-400 mt-1">{stats.sent + stats.overdue} 筆待收</div>
         </div>
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="text-sm text-gray-500 mb-1">本月已收</div>
           <div className="text-2xl font-bold text-green-600">
-            NT$ {stats.paidAmount.toLocaleString()}
+            NT$ {(stats.paidAmount || 0).toLocaleString()}
           </div>
           <div className="text-xs text-gray-400 mt-1">{stats.paid} 筆</div>
         </div>
@@ -1025,13 +1025,13 @@ ${accountInfo}
               {billings.map((billing) => (
                 <tr key={billing.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <div className="font-mono text-sm">{billing.billing_number}</div>
+                    <div className="font-mono text-sm">{billing.billing_number || '-'}</div>
                     <div className="text-xs text-gray-400">
-                      {new Date(billing.created_at).toLocaleDateString('zh-TW')}
+                      {billing.created_at ? new Date(billing.created_at).toLocaleDateString('zh-TW') : '-'}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{billing.customer_name}</div>
+                    <div className="font-medium">{billing.customer_name || '-'}</div>
                     {billing.customer_line_id && (
                       <div className="text-xs text-green-600 flex items-center gap-1">
                         <MessageCircle className="w-3 h-3" /> LINE 已綁定
@@ -1039,18 +1039,18 @@ ${accountInfo}
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm">{billing.title}</div>
+                    <div className="text-sm">{billing.title || '-'}</div>
                     {billing.billing_month && (
                       <div className="text-xs text-gray-400">{billing.billing_month}</div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="font-medium">NT$ {billing.total_amount.toLocaleString()}</div>
+                    <div className="font-medium">NT$ {(billing.total_amount || 0).toLocaleString()}</div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     {billing.cost_amount ? (
                       <div>
-                        <div className="text-sm text-red-600">NT$ {billing.cost_amount.toLocaleString()}</div>
+                        <div className="text-sm text-red-600">NT$ {(billing.cost_amount || 0).toLocaleString()}</div>
                         {billing.cost_vendor_name && (
                           <div className="text-xs text-gray-400">{billing.cost_vendor_name}</div>
                         )}
@@ -1063,10 +1063,10 @@ ${accountInfo}
                     {billing.cost_amount ? (
                       <div>
                         <div className="text-sm font-medium text-green-600">
-                          NT$ {(billing.total_amount - billing.cost_amount).toLocaleString()}
+                          NT$ {((billing.total_amount || 0) - (billing.cost_amount || 0)).toLocaleString()}
                         </div>
                         <div className="text-xs text-gray-400">
-                          {((billing.total_amount - billing.cost_amount) / billing.total_amount * 100).toFixed(0)}%
+                          {(((billing.total_amount || 0) - (billing.cost_amount || 0)) / (billing.total_amount || 1) * 100).toFixed(0)}%
                         </div>
                       </div>
                     ) : (
@@ -1074,8 +1074,8 @@ ${accountInfo}
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className={`text-sm ${new Date(billing.due_date) < new Date() && billing.status !== 'paid' ? 'text-red-600' : ''}`}>
-                      {new Date(billing.due_date).toLocaleDateString('zh-TW')}
+                    <div className={`text-sm ${billing.due_date && new Date(billing.due_date) < new Date() && billing.status !== 'paid' ? 'text-red-600' : ''}`}>
+                      {billing.due_date ? new Date(billing.due_date).toLocaleDateString('zh-TW') : '-'}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -1575,12 +1575,12 @@ ${accountInfo}
 
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <div className="text-sm text-gray-500">請款單號</div>
-              <div className="font-mono">{confirmingBilling.billing_number}</div>
+              <div className="font-mono">{confirmingBilling.billing_number || '-'}</div>
               <div className="text-sm text-gray-500 mt-2">客戶</div>
-              <div className="font-medium">{confirmingBilling.customer_name}</div>
+              <div className="font-medium">{confirmingBilling.customer_name || '-'}</div>
               <div className="text-sm text-gray-500 mt-2">應收金額</div>
               <div className="text-xl font-bold text-brand-primary-600">
-                NT$ {confirmingBilling.total_amount.toLocaleString()}
+                NT$ {(confirmingBilling.total_amount || 0).toLocaleString()}
               </div>
             </div>
 
@@ -1734,7 +1734,7 @@ ${accountInfo}
                 <div className="flex items-center gap-2 text-green-700">
                   <MessageCircle className="w-4 h-4" />
                   <span className="text-sm font-medium">
-                    發送至：{previewBilling.customer_line_group_name || previewBilling.customer_name}
+                    發送至：{previewBilling.customer_line_group_name || previewBilling.customer_name || '-'}
                   </span>
                 </div>
               </div>
@@ -1744,12 +1744,12 @@ ${accountInfo}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <span className="text-gray-500">請款單號：</span>
-                    <span className="font-mono">{previewBilling.billing_number}</span>
+                    <span className="font-mono">{previewBilling.billing_number || '-'}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">金額：</span>
                     <span className="font-semibold text-brand-primary-600">
-                      NT$ {previewBilling.total_amount?.toLocaleString()}
+                      NT$ {(previewBilling.total_amount || 0).toLocaleString()}
                     </span>
                   </div>
                 </div>
