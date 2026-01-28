@@ -77,19 +77,26 @@ export async function POST() {
           sentCount++;
           console.log(`[CRON] 排程 ${schedule.id} 發送成功`);
 
-          // 計算下次執行時間
-          const nextRunAt = calculateNextRunAt(schedule);
-
-          // 更新排程狀態
-          await supabase
-            .from('acct_line_schedules')
-            .update({
-              last_run_at: now.toISOString(),
-              next_run_at: nextRunAt?.toISOString() || null,
-              run_count: (schedule.run_count || 0) + 1,
-              status: schedule.schedule_type === 'once' ? 'completed' : 'active'
-            })
-            .eq('id', schedule.id);
+          // 單次排程：發送後直接刪除
+          if (schedule.schedule_type === 'once') {
+            await supabase
+              .from('acct_line_schedules')
+              .delete()
+              .eq('id', schedule.id);
+            console.log(`[CRON] 單次排程 ${schedule.id} 已刪除`);
+          } else {
+            // 週期性排程：計算下次執行時間
+            const nextRunAt = calculateNextRunAt(schedule);
+            await supabase
+              .from('acct_line_schedules')
+              .update({
+                last_run_at: now.toISOString(),
+                next_run_at: nextRunAt?.toISOString() || null,
+                run_count: (schedule.run_count || 0) + 1,
+                status: 'active'
+              })
+              .eq('id', schedule.id);
+          }
 
           // 記錄發送歷史（✅ 記錄替換後的內容）
           await supabase
