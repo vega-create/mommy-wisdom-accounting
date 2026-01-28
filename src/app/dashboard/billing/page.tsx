@@ -1,19 +1,40 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import {
-  FileText, Plus, Send, Check, Clock, AlertCircle, Edit2, Trash2, RefreshCw,
-  DollarSign, Calendar, User, Building, X, ChevronDown, ChevronUp, Download,
-  Filter, Search, CheckSquare, Square, Repeat
+  FileText, Plus, Send, Check, Clock, AlertCircle,
+  Edit2, Trash2, RefreshCw, DollarSign, Calendar,
+  User, Building, X, MessageCircle, CheckCircle, Receipt,
+  Repeat, Play, Pause
 } from 'lucide-react';
+
+interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  line_user_id?: string;
+  line_group_id?: string;
+  line_group_name?: string;
+  customer_type: string;
+  vendor_type?: string;
+  is_internal?: boolean;
+  tax_id?: string;
+}
+
+interface PaymentAccount {
+  id: string;
+  bank_name: string;
+  branch_name?: string;
+  account_number: string;
+  account_name: string;
+  is_default: boolean;
+}
 
 interface BillingRequest {
   id: string;
-  company_id: string;
   billing_number: string;
-  billing_month?: string;
   customer_id?: string;
   customer_name: string;
   customer_email?: string;
@@ -22,29 +43,26 @@ interface BillingRequest {
   customer_line_group_name?: string;
   title: string;
   description?: string;
+  billing_month?: string;
   amount: number;
   tax_amount: number;
   total_amount: number;
-  cost_amount?: number;
   cost_vendor_id?: string;
   cost_vendor_name?: string;
-  payment_account_id?: string;
+  cost_amount?: number;
   due_date: string;
-  status: 'draft' | 'sent' | 'pending' | 'paid' | 'overdue' | 'cancelled';
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  notification_sent_at?: string;
   paid_at?: string;
   paid_amount?: number;
-  notes?: string;
   created_at: string;
-  updated_at: string;
-  line_sent_at?: string;
-  line_message_id?: string;
-  transaction_id?: string;
-  recurring_billing_id?: string;
+  customer?: Customer;
+  payment_account_id?: string;
+  payment_account?: PaymentAccount;
 }
 
 interface RecurringBilling {
   id: string;
-  company_id: string;
   customer_id?: string;
   customer_name: string;
   customer_line_group_id?: string;
@@ -65,108 +83,63 @@ interface RecurringBilling {
   next_run_at?: string;
   last_run_at?: string;
   run_count: number;
-  auto_send: boolean;
+  auto_send?: boolean;
   message_template?: string;
-  created_at: string;
 }
-
-interface Customer {
-  id: string;
-  name: string;
-  email?: string;
-  line_user_id?: string;
-  line_group_id?: string;
-  line_group_name?: string;
-}
-
-interface Vendor {
-  id: string;
-  name: string;
-}
-
-interface PaymentAccount {
-  id: string;
-  bank_code: string;
-  bank_name: string;
-  branch_name?: string;
-  account_number: string;
-  account_name: string;
-  is_default: boolean;
-}
-
-interface LineGroup {
-  id: string;
-  group_id: string;
-  group_name: string;
-}
-
-const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  draft: { label: '草稿', color: 'text-gray-600', bg: 'bg-gray-100' },
-  sent: { label: '已發送', color: 'text-blue-600', bg: 'bg-blue-100' },
-  pending: { label: '待付款', color: 'text-yellow-600', bg: 'bg-yellow-100' },
-  paid: { label: '已收款', color: 'text-green-600', bg: 'bg-green-100' },
-  overdue: { label: '逾期', color: 'text-red-600', bg: 'bg-red-100' },
-  cancelled: { label: '已取消', color: 'text-gray-400', bg: 'bg-gray-50' },
-};
-
-const scheduleTypeConfig: Record<string, string> = {
-  monthly: '每月',
-  quarterly: '每季',
-  yearly: '每年',
-};
 
 export default function BillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const url_status = searchParams.get('status') || 'all';
+  const url_tab = searchParams.get('tab') || '';
+
+  const updateURL = (statusFilter: string, tab?: string) => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (tab) params.set('tab', tab);
+    router.replace(`/dashboard/billing?${params.toString()}`, { scroll: false });
+  };
+
   const { company } = useAuthStore();
-
-  // URL 參數
-  const tabParam = searchParams.get('tab');
-  const statusParam = searchParams.get('status') || 'all';
-  const startDateParam = searchParams.get('start_date') || '';
-  const endDateParam = searchParams.get('end_date') || '';
-
   const [billings, setBillings] = useState<BillingRequest[]>([]);
-  const [recurringBillings, setRecurringBillings] = useState<RecurringBilling[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccount[]>([]);
-  const [lineGroups, setLineGroups] = useState<LineGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>(url_status);
+
+  // Modal states
   const [showModal, setShowModal] = useState(false);
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [showRecurringList, setShowRecurringList] = useState(tabParam === 'recurring');
   const [editingBilling, setEditingBilling] = useState<BillingRequest | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Payment confirmation modal
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [confirmingBilling, setConfirmingBilling] = useState<BillingRequest | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  // 發送預覽 Modal
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewBilling, setPreviewBilling] = useState<BillingRequest | null>(null);
+  const [previewMessage, setPreviewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  // 廠商列表
+  const [vendors, setVendors] = useState<Customer[]>([]);
+
+  // ========== 週期性請款 ==========
+  const [recurringBillings, setRecurringBillings] = useState<RecurringBilling[]>([]);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringBilling | null>(null);
-  const [statusFilter, setStatusFilter] = useState(statusParam);
-  const [startDate, setStartDate] = useState(startDateParam);
-  const [endDate, setEndDate] = useState(endDateParam);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [isSavingRecurring, setIsSavingRecurring] = useState(false);
+  const [showRecurringList, setShowRecurringList] = useState(url_tab === 'recurring');
 
-  // 批量選擇
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single');
-  const [singleDeleteId, setSingleDeleteId] = useState<string | null>(null);
-
-  const [form, setForm] = useState({
-    customer_id: '',
-    customer_name: '',
-    customer_email: '',
-    customer_line_id: '',
-    customer_line_group_id: '',
-    customer_line_group_name: '',
-    title: '',
-    description: '',
-    amount: '',
-    tax_amount: '0',
-    billing_month: new Date().toISOString().slice(0, 7),
-    due_date: '',
-    cost_amount: '',
-    cost_vendor_id: '',
-    cost_vendor_name: '',
-    payment_account_id: '',
-  });
+  // 切換週期性請款列表顯示
+  const toggleRecurringList = () => {
+    const newShow = !showRecurringList;
+    setShowRecurringList(newShow);
+    updateURL(statusFilter, newShow ? 'recurring' : '');
+  };
 
   const [recurringForm, setRecurringForm] = useState({
     customer_id: '',
@@ -181,296 +154,213 @@ export default function BillingPage() {
     cost_vendor_id: '',
     cost_vendor_name: '',
     payment_account_id: '',
-    schedule_type: 'monthly' as 'monthly' | 'quarterly' | 'yearly',
+    schedule_type: 'yearly' as 'monthly' | 'quarterly' | 'yearly',
     schedule_day: 1,
     schedule_month: 1,
     days_before_due: 14,
     auto_send: true,
-    message_template: `【請款通知】
-{客戶名稱} 您好，
-{請款項目}費用請款如下：
-請款金額：NT$ {金額}
-付款期限：{到期日}
-匯款資訊：
-{匯款帳戶}
-如已付款請忽略此通知，謝謝！
-智慧媽咪國際 敬上`,
+    message_template: ''
   });
 
-  // 更新 URL 參數
-  const updateUrlParams = (params: Record<string, string>) => {
-    const newParams = new URLSearchParams(searchParams.toString());
-    Object.entries(params).forEach(([key, value]) => {
-      if (value) {
-        newParams.set(key, value);
-      } else {
-        newParams.delete(key);
+  // Form state
+  const [form, setForm] = useState({
+    customer_id: '',
+    customer_name: '',
+    customer_email: '',
+    customer_line_id: '',
+    customer_line_group_id: '',
+    customer_line_group_name: '',
+    title: '',
+    description: '',
+    billing_month: new Date().toISOString().slice(0, 7),
+    amount: '',
+    tax_amount: '0',
+    payment_account_id: '',
+    due_date: '',
+    cost_vendor_id: '',
+    cost_vendor_name: '',
+    cost_amount: ''
+  });
+
+  // Payment form
+  const [paymentForm, setPaymentForm] = useState({
+    paid_amount: '',
+    payment_method: '銀行轉帳',
+    payment_note: '',
+    send_notification: true,
+    invoice_action: 'auto' as 'manual' | 'auto',
+    invoice_item_name: '服務費'
+  });
+
+  // 載入請款單列表
+  const loadBillings = async () => {
+    if (!company?.id) return;
+    setIsLoading(true);
+    try {
+      const url = statusFilter === 'all'
+        ? `/api/billing?company_id=${company.id}`
+        : `/api/billing?company_id=${company.id}&status=${statusFilter}`;
+
+      const response = await fetch(url);
+      const result = await response.json();
+      if (result.data) {
+        setBillings(result.data);
       }
-    });
-    router.push(`/dashboard/billing?${newParams.toString()}`, { scroll: false });
+    } catch (error) {
+      console.error('Error loading billings:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 載入客戶列表
+  const loadCustomers = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/customers?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setCustomers(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  };
+
+  // 載入收款帳戶
+  const loadPaymentAccounts = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/payment-accounts?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setPaymentAccounts(result.data);
+        const defaultAccount = result.data.find((a: PaymentAccount) => a.is_default);
+        if (defaultAccount) {
+          setForm(prev => ({ ...prev, payment_account_id: defaultAccount.id }));
+        }
+      }
+    } catch (error) {
+      console.error('Error loading payment accounts:', error);
+    }
+  };
+
+  // 載入廠商列表
+  const loadVendors = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/customers?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setVendors(result.data.filter((c: Customer) =>
+          (c.customer_type === 'vendor' || c.customer_type === 'both') &&
+          !c.is_internal
+        ));
+      }
+    } catch (error) {
+      console.error('Error loading vendors:', error);
+    }
+  };
+
+  // ========== 載入週期性請款 ==========
+  const loadRecurringBillings = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/billing/recurring?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) {
+        setRecurringBillings(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading recurring billings:', error);
+    }
   };
 
   useEffect(() => {
     if (company?.id) {
-      fetchData();
+      loadBillings();
+      loadCustomers();
+      loadPaymentAccounts();
+      loadVendors();
+      loadRecurringBillings();
     }
-  }, [company?.id]);
+  }, [company?.id, statusFilter]);
 
-  // 監聽篩選變化，更新 URL
-  useEffect(() => {
-    updateUrlParams({
-      status: statusFilter !== 'all' ? statusFilter : '',
-      start_date: startDate,
-      end_date: endDate,
-      tab: showRecurringList ? 'recurring' : '',
-    });
-  }, [statusFilter, startDate, endDate, showRecurringList]);
-
-  const fetchData = async () => {
-    if (!company?.id) return;
-    setLoading(true);
-    try {
-      const [billingsRes, recurringRes, customersRes, vendorsRes, accountsRes, groupsRes] = await Promise.all([
-        fetch(`/api/billing?company_id=${company.id}`),
-        fetch(`/api/billing/recurring?company_id=${company.id}`),
-        fetch(`/api/customers?company_id=${company.id}`),
-        fetch(`/api/vendors?company_id=${company.id}`),
-        fetch(`/api/payment-accounts?company_id=${company.id}`),
-        fetch(`/api/line/groups?company_id=${company.id}`),
-      ]);
-
-      const [billingsData, recurringData, customersData, vendorsData, accountsData, groupsData] = await Promise.all([
-        billingsRes.json(),
-        recurringRes.json(),
-        customersRes.json(),
-        vendorsRes.json(),
-        accountsRes.json(),
-        groupsRes.json(),
-      ]);
-
-      setBillings(billingsData.data || []);
-      setRecurringBillings(recurringData.data || []);
-      setCustomers(customersData.data || []);
-      setVendors(vendorsData.data || []);
-      setPaymentAccounts(accountsData.data || []);
-      setLineGroups(groupsData.data || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 篩選後的請款單
-  const filteredBillings = useMemo(() => {
-    return billings.filter(b => {
-      // 狀態篩選
-      if (statusFilter !== 'all' && b.status !== statusFilter) return false;
-
-      // 時間篩選
-      if (startDate && b.created_at < startDate) return false;
-      if (endDate && b.created_at > endDate + 'T23:59:59') return false;
-
-      // 關鍵字搜尋
-      if (searchKeyword) {
-        const keyword = searchKeyword.toLowerCase();
-        return (
-          b.billing_number.toLowerCase().includes(keyword) ||
-          b.customer_name.toLowerCase().includes(keyword) ||
-          b.title.toLowerCase().includes(keyword)
-        );
-      }
-
-      return true;
-    });
-  }, [billings, statusFilter, startDate, endDate, searchKeyword]);
-
-  // 全選/取消全選
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredBillings.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredBillings.map(b => b.id)));
-    }
-  };
-
-  // 切換單筆選擇
-  const toggleSelect = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
-
-  // 單筆刪除確認
-  const confirmSingleDelete = (id: string) => {
-    setSingleDeleteId(id);
-    setDeleteTarget('single');
-    setShowDeleteConfirm(true);
-  };
-
-  // 批量刪除確認
-  const confirmBatchDelete = () => {
-    if (selectedIds.size === 0) {
-      alert('請先選擇要刪除的請款單');
-      return;
-    }
-    setDeleteTarget('batch');
-    setShowDeleteConfirm(true);
-  };
-
-  // 執行刪除
-  const executeDelete = async () => {
-    try {
-      if (deleteTarget === 'single' && singleDeleteId) {
-        const res = await fetch(`/api/billing?id=${singleDeleteId}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('刪除失敗');
-      } else if (deleteTarget === 'batch') {
-        // 批量刪除
-        const deletePromises = Array.from(selectedIds).map(id =>
-          fetch(`/api/billing?id=${id}`, { method: 'DELETE' })
-        );
-        await Promise.all(deletePromises);
-        setSelectedIds(new Set());
-      }
-
-      setShowDeleteConfirm(false);
-      setSingleDeleteId(null);
-      fetchData();
-    } catch (error) {
-      console.error('Delete error:', error);
-      alert('刪除失敗');
-    }
-  };
-
-  // 匯出 CSV
-  const exportCSV = () => {
-    const headers = ['請款單號', '日期', '客戶', '項目', '金額', '成本', '毛利', '到期日', '狀態'];
-    const rows = filteredBillings.map(b => [
-      b.billing_number,
-      b.created_at.split('T')[0],
-      b.customer_name,
-      b.title,
-      b.total_amount || 0,
-      b.cost_amount || 0,
-      (b.total_amount || 0) - (b.cost_amount || 0),
-      b.due_date,
-      statusConfig[b.status]?.label || b.status,
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `請款單_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleSave = async () => {
-    if (!company?.id || !form.customer_name || !form.title || !form.amount) {
-      alert('請填寫必要欄位');
-      return;
-    }
-
-    try {
-      const body = {
-        company_id: company.id,
-        customer_id: form.customer_id || null,
-        customer_name: form.customer_name,
-        customer_email: form.customer_email || null,
-        customer_line_id: form.customer_line_id || null,
-        customer_line_group_id: form.customer_line_group_id || null,
-        customer_line_group_name: form.customer_line_group_name || null,
-        title: form.title,
-        description: form.description || null,
-        amount: parseFloat(form.amount),
-        tax_amount: parseFloat(form.tax_amount || '0'),
-        billing_month: form.billing_month || null,
-        due_date: form.due_date || null,
-        cost_amount: form.cost_amount ? parseFloat(form.cost_amount) : null,
-        cost_vendor_id: form.cost_vendor_id || null,
-        cost_vendor_name: form.cost_vendor_name || null,
-        payment_account_id: form.payment_account_id || null,
+  // 選擇客戶時自動帶入資料
+  const handleCustomerSelect = async (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      let newForm = {
+        ...form,
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_email: customer.email || '',
+        customer_line_id: customer.line_user_id || '',
+        customer_line_group_id: customer.line_group_id || '',
+        customer_line_group_name: customer.line_group_name || '',
+        cost_vendor_id: '',
+        cost_vendor_name: '',
+        cost_amount: ''
       };
 
-      const res = await fetch('/api/billing', {
-        method: editingBilling ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingBilling ? { id: editingBilling.id, ...body } : body),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || '儲存失敗');
+      try {
+        const response = await fetch(`/api/billing/last-cost?customer_id=${customerId}&company_id=${company?.id}`);
+        const result = await response.json();
+        if (result.data) {
+          newForm = {
+            ...newForm,
+            cost_vendor_id: result.data.cost_vendor_id || '',
+            cost_vendor_name: result.data.cost_vendor_name || '',
+            cost_amount: result.data.cost_amount?.toString() || ''
+          };
+        }
+      } catch (error) {
+        console.error('Error loading last cost:', error);
       }
 
-      setShowModal(false);
-      resetForm();
-      fetchData();
-    } catch (error: any) {
-      alert(error.message || '儲存失敗');
+      setForm(newForm);
+    } else {
+      setForm({
+        ...form,
+        customer_id: '',
+        customer_name: '',
+        customer_email: '',
+        customer_line_id: '',
+        customer_line_group_id: '',
+        customer_line_group_name: '',
+        cost_vendor_id: '',
+        cost_vendor_name: '',
+        cost_amount: ''
+      });
     }
   };
 
-  const handleSaveRecurring = async () => {
-    if (!company?.id || !recurringForm.customer_name || !recurringForm.title || !recurringForm.amount) {
-      alert('請填寫必要欄位');
-      return;
-    }
-
-    try {
-      const body = {
-        company_id: company.id,
-        customer_id: recurringForm.customer_id || null,
-        customer_name: recurringForm.customer_name,
-        customer_line_group_id: recurringForm.customer_line_group_id || null,
-        customer_line_group_name: recurringForm.customer_line_group_name || null,
-        title: recurringForm.title,
-        description: recurringForm.description || null,
-        amount: parseFloat(recurringForm.amount),
-        tax_amount: parseFloat(recurringForm.tax_amount || '0'),
-        cost_amount: recurringForm.cost_amount ? parseFloat(recurringForm.cost_amount) : null,
-        cost_vendor_id: recurringForm.cost_vendor_id || null,
-        cost_vendor_name: recurringForm.cost_vendor_name || null,
-        payment_account_id: recurringForm.payment_account_id || null,
-        schedule_type: recurringForm.schedule_type,
-        schedule_day: recurringForm.schedule_day,
-        schedule_month: recurringForm.schedule_month,
-        days_before_due: recurringForm.days_before_due,
-        auto_send: recurringForm.auto_send,
-        message_template: recurringForm.message_template,
-      };
-
-      const res = await fetch('/api/billing/recurring', {
-        method: editingRecurring ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingRecurring ? { id: editingRecurring.id, ...body } : body),
+  // ========== 週期性請款客戶選擇 ==========
+  const handleRecurringCustomerSelect = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      setRecurringForm({
+        ...recurringForm,
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_line_group_id: customer.line_group_id || '',
+        customer_line_group_name: customer.line_group_name || ''
       });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || '儲存失敗');
-      }
-
-      setShowRecurringModal(false);
-      resetRecurringForm();
-      fetchData();
-    } catch (error: any) {
-      alert(error.message || '儲存失敗');
+    } else {
+      setRecurringForm({
+        ...recurringForm,
+        customer_id: '',
+        customer_name: '',
+        customer_line_group_id: '',
+        customer_line_group_name: ''
+      });
     }
   };
 
-  const resetForm = () => {
+  // 開啟新增 Modal
+  const openAddModal = () => {
     setEditingBilling(null);
+    const defaultAccount = paymentAccounts.find(a => a.is_default);
     setForm({
       customer_id: '',
       customer_name: '',
@@ -480,49 +370,19 @@ export default function BillingPage() {
       customer_line_group_name: '',
       title: '',
       description: '',
-      amount: '',
-      tax_amount: '0',
       billing_month: new Date().toISOString().slice(0, 7),
-      due_date: '',
-      cost_amount: '',
-      cost_vendor_id: '',
-      cost_vendor_name: '',
-      payment_account_id: '',
-    });
-  };
-
-  const resetRecurringForm = () => {
-    setEditingRecurring(null);
-    setRecurringForm({
-      customer_id: '',
-      customer_name: '',
-      customer_line_group_id: '',
-      customer_line_group_name: '',
-      title: '',
-      description: '',
       amount: '',
       tax_amount: '0',
-      cost_amount: '',
+      payment_account_id: defaultAccount?.id || '',
+      due_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       cost_vendor_id: '',
       cost_vendor_name: '',
-      payment_account_id: '',
-      schedule_type: 'monthly',
-      schedule_day: 1,
-      schedule_month: 1,
-      days_before_due: 14,
-      auto_send: true,
-      message_template: `【請款通知】
-{客戶名稱} 您好，
-{請款項目}費用請款如下：
-請款金額：NT$ {金額}
-付款期限：{到期日}
-匯款資訊：
-{匯款帳戶}
-如已付款請忽略此通知，謝謝！
-智慧媽咪國際 敬上`,
+      cost_amount: ''
     });
+    setShowModal(true);
   };
 
+  // 開啟編輯 Modal
   const openEditModal = (billing: BillingRequest) => {
     setEditingBilling(billing);
     setForm({
@@ -534,16 +394,57 @@ export default function BillingPage() {
       customer_line_group_name: billing.customer_line_group_name || '',
       title: billing.title,
       description: billing.description || '',
-      amount: billing.amount.toString(),
-      tax_amount: (billing.tax_amount || 0).toString(),
       billing_month: billing.billing_month || '',
-      due_date: billing.due_date || '',
-      cost_amount: billing.cost_amount?.toString() || '',
+      amount: (billing.amount || 0).toString(),
+      tax_amount: (billing.tax_amount || 0).toString(),
+      payment_account_id: billing.payment_account?.id || '',
+      due_date: billing.due_date,
       cost_vendor_id: billing.cost_vendor_id || '',
       cost_vendor_name: billing.cost_vendor_name || '',
-      payment_account_id: billing.payment_account_id || '',
+      cost_amount: billing.cost_amount?.toString() || ''
     });
     setShowModal(true);
+  };
+
+  // ========== 週期性請款 Modal ==========
+  const openAddRecurringModal = () => {
+    setEditingRecurring(null);
+    const defaultAccount = paymentAccounts.find(a => a.is_default);
+    setRecurringForm({
+      customer_id: '',
+      customer_name: '',
+      customer_line_group_id: '',
+      customer_line_group_name: '',
+      title: '',
+      description: '',
+      amount: '',
+      tax_amount: '0',
+      cost_amount: '',
+      cost_vendor_id: '',
+      cost_vendor_name: '',
+      payment_account_id: defaultAccount?.id || '',
+      schedule_type: 'yearly',
+      schedule_day: 1,
+      schedule_month: 1,
+      days_before_due: 14,
+      auto_send: true,
+      message_template: `【請款通知】
+
+{客戶名稱} 您好，
+
+{請款項目}費用請款如下：
+
+請款金額：NT$ {金額}
+付款期限：{到期日}
+
+匯款資訊：
+{匯款帳戶}
+
+如已付款請忽略此通知，謝謝！
+
+智慧媽咪國際 敬上`
+    });
+    setShowRecurringModal(true);
   };
 
   const openEditRecurringModal = (recurring: RecurringBilling) => {
@@ -555,7 +456,7 @@ export default function BillingPage() {
       customer_line_group_name: recurring.customer_line_group_name || '',
       title: recurring.title,
       description: recurring.description || '',
-      amount: recurring.amount.toString(),
+      amount: (recurring.amount || 0).toString(),
       tax_amount: (recurring.tax_amount || 0).toString(),
       cost_amount: recurring.cost_amount?.toString() || '',
       cost_vendor_id: recurring.cost_vendor_id || '',
@@ -565,708 +466,849 @@ export default function BillingPage() {
       schedule_day: recurring.schedule_day,
       schedule_month: recurring.schedule_month || 1,
       days_before_due: recurring.days_before_due || 14,
-      auto_send: recurring.auto_send ?? true,
+      auto_send: recurring.auto_send !== false,
       message_template: recurring.message_template || `【請款通知】
+
 {客戶名稱} 您好，
+
 {請款項目}費用請款如下：
+
 請款金額：NT$ {金額}
 付款期限：{到期日}
+
 匯款資訊：
 {匯款帳戶}
+
 如已付款請忽略此通知，謝謝！
-智慧媽咪國際 敬上`,
+
+智慧媽咪國際 敬上`
     });
     setShowRecurringModal(true);
   };
 
-  const handleCustomerSelect = (customerId: string, isRecurring = false) => {
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      if (isRecurring) {
-        setRecurringForm(prev => ({
-          ...prev,
-          customer_id: customer.id,
-          customer_name: customer.name,
-          customer_line_group_id: customer.line_group_id || '',
-          customer_line_group_name: customer.line_group_name || '',
-        }));
-      } else {
-        setForm(prev => ({
-          ...prev,
-          customer_id: customer.id,
-          customer_name: customer.name,
-          customer_email: customer.email || '',
-          customer_line_id: customer.line_user_id || '',
-          customer_line_group_id: customer.line_group_id || '',
-          customer_line_group_name: customer.line_group_name || '',
-        }));
-      }
-    }
-  };
-
-  const handleVendorSelect = (vendorId: string, isRecurring = false) => {
+  // 選擇成本廠商
+  const handleCostVendorSelect = (vendorId: string) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (vendor) {
-      if (isRecurring) {
-        setRecurringForm(prev => ({
-          ...prev,
-          cost_vendor_id: vendor.id,
-          cost_vendor_name: vendor.name,
-        }));
-      } else {
-        setForm(prev => ({
-          ...prev,
-          cost_vendor_id: vendor.id,
-          cost_vendor_name: vendor.name,
-        }));
-      }
+      setForm({
+        ...form,
+        cost_vendor_id: vendor.id,
+        cost_vendor_name: vendor.name
+      });
     }
   };
 
-  const handleLineGroupSelect = (groupId: string, isRecurring = false) => {
-    const group = lineGroups.find(g => g.group_id === groupId);
-    if (group) {
-      if (isRecurring) {
-        setRecurringForm(prev => ({
-          ...prev,
-          customer_line_group_id: group.group_id,
-          customer_line_group_name: group.group_name,
-        }));
-      } else {
-        setForm(prev => ({
-          ...prev,
-          customer_line_group_id: group.group_id,
-          customer_line_group_name: group.group_name,
-        }));
-      }
+  const handleRecurringCostVendorSelect = (vendorId: string) => {
+    const vendor = vendors.find(v => v.id === vendorId);
+    if (vendor) {
+      setRecurringForm({
+        ...recurringForm,
+        cost_vendor_id: vendor.id,
+        cost_vendor_name: vendor.name
+      });
     }
   };
 
-  const handleSendNotification = async (billing: BillingRequest) => {
-    if (!billing.customer_line_group_id && !billing.customer_line_id) {
-      alert('此客戶未設定 LINE 通知');
+  // 儲存請款單
+  const handleSave = async () => {
+    if (!company?.id) return;
+    if (!form.customer_name || !form.amount || !form.due_date || !form.title) {
+      alert('請填寫必要欄位');
       return;
     }
 
-    const message = `親愛的 ${billing.customer_name}，您好：
-
-您的請款單已產生，詳情如下：
-
-📋 請款單號：${billing.billing_number}
-📝 項目：${billing.title}
-💰 金額：NT$ ${(billing.total_amount || 0).toLocaleString()}
-📅 付款期限：${billing.due_date || '請盡快付款'}
-
-如有疑問，請與我們聯繫。
-智慧媽咪國際 敬上`;
-
-    const confirmed = window.confirm(`確定要發送請款通知？\n\n${message}`);
-    if (!confirmed) return;
-
+    setIsSaving(true);
     try {
-      const res = await fetch('/api/billing/notify', {
-        method: 'POST',
+      const url = '/api/billing';
+      const method = editingBilling ? 'PUT' : 'POST';
+      const body = editingBilling
+        ? { id: editingBilling.id, ...form }
+        : { company_id: company.id, ...form };
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billing_id: billing.id,
-          message,
-        }),
+        body: JSON.stringify(body)
       });
+      const result = await response.json();
 
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || '發送失敗');
+      if (result.success || result.data) {
+        setShowModal(false);
+        loadBillings();
+        alert(editingBilling ? '請款單已更新！' : '請款單已建立！');
+      } else {
+        alert(result.error || '儲存失敗');
       }
-
-      alert('通知已發送');
-      fetchData();
-    } catch (error: any) {
-      alert(error.message || '發送失敗');
-    }
-  };
-
-  const handleConfirmPayment = async (billing: BillingRequest) => {
-    const paidAmount = prompt('請輸入收款金額', (billing.total_amount || 0).toString());
-    if (!paidAmount) return;
-
-    try {
-      const res = await fetch('/api/billing/confirm-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billing_id: billing.id,
-          paid_amount: parseFloat(paidAmount),
-          bank_account_id: billing.payment_account_id,
-        }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || '確認收款失敗');
-      }
-
-      alert('收款確認完成');
-      fetchData();
-    } catch (error: any) {
-      alert(error.message || '確認收款失敗');
-    }
-  };
-
-  const handleDeleteRecurring = async (id: string) => {
-    if (!confirm('確定要刪除此週期性請款設定？')) return;
-
-    try {
-      const res = await fetch(`/api/billing/recurring?id=${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('刪除失敗');
-      fetchData();
     } catch (error) {
-      alert('刪除失敗');
+      console.error('Error saving billing:', error);
+      alert('儲存失敗');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleToggleRecurringActive = async (recurring: RecurringBilling) => {
+  // ========== 儲存週期性請款 ==========
+  const handleSaveRecurring = async () => {
+    if (!company?.id) return;
+    if (!recurringForm.customer_name || !recurringForm.amount || !recurringForm.title) {
+      alert('請填寫必要欄位');
+      return;
+    }
+
+    setIsSavingRecurring(true);
     try {
-      const res = await fetch('/api/billing/recurring', {
+      const url = '/api/billing/recurring';
+      const method = editingRecurring ? 'PUT' : 'POST';
+      const body = editingRecurring
+        ? { id: editingRecurring.id, ...recurringForm }
+        : { company_id: company.id, ...recurringForm };
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const result = await response.json();
+
+      if (result.success || result.data) {
+        setShowRecurringModal(false);
+        loadRecurringBillings();
+        alert(editingRecurring ? '週期性請款已更新！' : '週期性請款已建立！');
+      } else {
+        alert(result.error || '儲存失敗');
+      }
+    } catch (error) {
+      console.error('Error saving recurring billing:', error);
+      alert('儲存失敗');
+    } finally {
+      setIsSavingRecurring(false);
+    }
+  };
+
+  // 切換週期性請款狀態
+  const handleToggleRecurring = async (id: string, currentActive: boolean) => {
+    try {
+      const response = await fetch('/api/billing/recurring', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: recurring.id,
-          is_active: !recurring.is_active,
-        }),
+        body: JSON.stringify({ id, is_active: !currentActive })
       });
-
-      if (!res.ok) throw new Error('更新失敗');
-      fetchData();
+      const result = await response.json();
+      if (result.success) {
+        loadRecurringBillings();
+      } else {
+        alert(result.error || '更新失敗');
+      }
     } catch (error) {
+      console.error('Error toggling recurring:', error);
       alert('更新失敗');
     }
   };
 
-  // 統計
-  const stats = useMemo(() => {
-    const total = filteredBillings.reduce((sum, b) => sum + (b.total_amount || 0), 0);
-    const paid = filteredBillings.filter(b => b.status === 'paid').reduce((sum, b) => sum + (b.total_amount || 0), 0);
-    const pending = filteredBillings.filter(b => ['sent', 'pending'].includes(b.status)).reduce((sum, b) => sum + (b.total_amount || 0), 0);
-    const cost = filteredBillings.reduce((sum, b) => sum + (b.cost_amount || 0), 0);
-    return { total, paid, pending, cost, profit: total - cost };
-  }, [filteredBillings]);
+  // 刪除週期性請款
+  const handleDeleteRecurring = async (id: string) => {
+    if (!confirm('確定要刪除此週期性請款？')) return;
+    try {
+      const response = await fetch(`/api/billing/recurring?id=${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        loadRecurringBillings();
+      } else {
+        alert(result.error || '刪除失敗');
+      }
+    } catch (error) {
+      console.error('Error deleting recurring:', error);
+      alert('刪除失敗');
+    }
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
-  }
+  // 打開發送預覽 Modal
+  const openSendPreview = async (billing: BillingRequest) => {
+    const hasLineContact = billing.customer_line_group_id || billing.customer_line_id;
+    if (!hasLineContact) {
+      alert('此客戶沒有設定 LINE 群組，無法發送通知');
+      return;
+    }
+
+    const account = paymentAccounts.find(a => a.id === billing.payment_account_id);
+    const accountInfo = account
+      ? `${account.bank_name} ${account.branch_name || ''}\n帳號：${account.account_number}\n戶名：${account.account_name}`
+      : '（請設定收款帳戶）';
+
+    const defaultMessage = `【請款通知】
+
+${billing.customer_name} 您好，
+
+${billing.billing_month ? `${billing.billing_month.replace('-', '年')}月` : ''}${billing.title}費用請款如下：
+
+請款金額：NT$ ${(billing.total_amount || billing.amount || 0).toLocaleString()}
+付款期限：${new Date(billing.due_date).toLocaleDateString('zh-TW')}
+
+匯款資訊：
+${accountInfo}
+
+如已付款請忽略此通知，謝謝！
+
+智慧媽咪國際 敬上`;
+
+    setPreviewBilling(billing);
+    setPreviewMessage(defaultMessage);
+    setShowPreviewModal(true);
+  };
+
+  // 確認發送通知
+  const handleConfirmSend = async () => {
+    if (!previewBilling) return;
+
+    setIsSending(true);
+    try {
+      const response = await fetch('/api/billing/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_id: previewBilling.id,
+          custom_message: previewMessage
+        })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        alert('請款通知已發送！');
+        setShowPreviewModal(false);
+        setPreviewBilling(null);
+        setPreviewMessage('');
+        loadBillings();
+      } else {
+        alert(result.error || '發送失敗');
+      }
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      alert('發送失敗');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // 開啟確認收款 Modal
+  const openPaymentModal = (billing: BillingRequest) => {
+    setConfirmingBilling(billing);
+    setPaymentForm({
+      paid_amount: (billing.total_amount || 0).toString(),
+      payment_method: '銀行轉帳',
+      payment_note: '',
+      send_notification: true,
+      invoice_action: 'auto',
+      invoice_item_name: '服務費'
+    });
+    setShowPaymentModal(true);
+  };
+
+  // 確認收款
+  const handleConfirmPayment = async () => {
+    if (!confirmingBilling || !paymentForm.paid_amount) return;
+
+    setIsConfirming(true);
+    try {
+      const response = await fetch('/api/billing/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_id: confirmingBilling.id,
+          paid_amount: paymentForm.paid_amount,
+          payment_method: paymentForm.payment_method,
+          payment_note: paymentForm.payment_note,
+          send_notification: paymentForm.send_notification
+        })
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        let message = '✅ 收款確認完成！\n\n';
+        message += '📝 已自動建立收入記錄\n';
+
+        if (result.data?.has_cost) {
+          message += '📋 已建立應付款項提醒（外包成本）\n';
+        }
+
+        if (result.data?.notification_sent) {
+          message += '📱 已發送收款通知給客戶\n';
+        }
+
+        if (paymentForm.invoice_action === 'auto') {
+          try {
+            const customer = customers.find(c => c.id === confirmingBilling.customer_id);
+
+            const invoiceResponse = await fetch('/api/invoices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                company_id: company?.id,
+                billing_request_id: confirmingBilling.id,
+                invoice_type: customer?.tax_id ? 'B2B' : 'B2C',
+                customer_id: confirmingBilling.customer_id || null,
+                buyer_name: confirmingBilling.customer_name,
+                buyer_tax_id: customer?.tax_id || '',
+                buyer_email: confirmingBilling.customer_email || '',
+                items: [{
+                  name: paymentForm.invoice_item_name || '服務費',
+                  quantity: 1,
+                  unit: '式',
+                  price: parseFloat(paymentForm.paid_amount),
+                }],
+                issue_to_ezpay: true,
+              })
+            });
+            const invoiceResult = await invoiceResponse.json();
+
+            if (invoiceResult.success) {
+              message += `🧾 發票已開立：${invoiceResult.data?.invoice_number || '成功'}\n`;
+              message += '📤 已自動發送發票通知\n';
+            } else {
+              message += `⚠️ 發票開立失敗：${invoiceResult.error}\n`;
+              message += '請至發票頁面手動開立\n';
+            }
+          } catch (invoiceError) {
+            console.error('Auto invoice error:', invoiceError);
+            message += '⚠️ 發票開立失敗，請至發票頁面手動開立\n';
+          }
+
+          alert(message);
+          setShowPaymentModal(false);
+          loadBillings();
+
+        } else {
+          alert(message);
+          setShowPaymentModal(false);
+          loadBillings();
+
+          if (confirm('是否要前往開立發票？')) {
+            window.location.href = `/dashboard/invoices?billing_id=${confirmingBilling.id}`;
+          }
+        }
+      } else {
+        alert(result.error || '確認收款失敗');
+      }
+    } catch (error) {
+      console.error('Error confirming payment:', error);
+      alert('確認收款失敗');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  // 刪除請款單
+  const handleDelete = async (id: string) => {
+    if (!confirm('確定要刪除此請款單？')) return;
+    try {
+      const response = await fetch(`/api/billing?id=${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        loadBillings();
+      } else {
+        alert(result.error || '刪除失敗');
+      }
+    } catch (error) {
+      console.error('Error deleting billing:', error);
+      alert('刪除失敗');
+    }
+  };
+
+  // 狀態顏色
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-100 text-gray-700';
+      case 'sent': return 'bg-blue-100 text-blue-700';
+      case 'paid': return 'bg-green-100 text-green-700';
+      case 'overdue': return 'bg-red-100 text-red-700';
+      case 'cancelled': return 'bg-gray-100 text-gray-500';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'draft': return '草稿';
+      case 'sent': return '已發送';
+      case 'paid': return '已收款';
+      case 'overdue': return '逾期';
+      case 'cancelled': return '已取消';
+      default: return status;
+    }
+  };
+
+  const getScheduleTypeText = (type: string) => {
+    switch (type) {
+      case 'monthly': return '每月';
+      case 'quarterly': return '每季';
+      case 'yearly': return '每年';
+      default: return type;
+    }
+  };
+
+  // 統計
+  const stats = {
+    total: billings.length,
+    draft: billings.filter(b => b.status === 'draft').length,
+    sent: billings.filter(b => b.status === 'sent').length,
+    paid: billings.filter(b => b.status === 'paid').length,
+    overdue: billings.filter(b => b.status === 'overdue').length,
+    totalAmount: billings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + (b.total_amount || 0), 0),
+    paidAmount: billings.filter(b => b.status === 'paid').reduce((sum, b) => sum + (b.paid_amount || b.total_amount || 0), 0),
+    pendingAmount: billings.filter(b => ['sent', 'overdue'].includes(b.status)).reduce((sum, b) => sum + (b.total_amount || 0), 0)
+  };
 
   return (
-    <div className="space-y-6">
-      {/* 標題列 */}
-      <div className="flex items-center justify-between">
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">請款管理</h1>
-          <p className="text-gray-500 mt-1">管理客戶請款單與週期性請款設定</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <FileText className="w-7 h-7 text-brand-primary-500" />
+            請款管理
+          </h1>
+          <p className="text-gray-500 mt-1">建立請款單、發送通知、確認收款</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <button
-            onClick={() => setShowRecurringList(!showRecurringList)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${showRecurringList ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-gray-300 text-gray-700'
+            onClick={toggleRecurringList}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 ${showRecurringList
+              ? 'bg-purple-600 text-white'
+              : 'border border-purple-300 text-purple-600 hover:bg-purple-50'
               }`}
           >
             <Repeat className="w-4 h-4" />
-            週期請款
-            {showRecurringList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            週期請款 {recurringBillings.length > 0 && `(${recurringBillings.filter(r => r.is_active).length})`}
           </button>
           <button
-            onClick={() => { resetForm(); setShowModal(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            onClick={openAddModal}
+            className="px-4 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" />
-            新增請款
+            <Plus className="w-4 h-4" /> 新增請款單
           </button>
         </div>
       </div>
 
-      {/* 週期性請款區塊 */}
+      {/* 週期性請款列表 */}
       {showRecurringList && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+        <div className="bg-purple-50 rounded-xl border border-purple-200 p-4 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-purple-800">週期性請款設定</h2>
+            <h2 className="text-lg font-semibold text-purple-800 flex items-center gap-2">
+              <Repeat className="w-5 h-5" />
+              週期性請款
+            </h2>
             <button
-              onClick={() => { resetRecurringForm(); setShowRecurringModal(true); }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+              onClick={openAddRecurringModal}
+              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-1 text-sm"
             >
-              <Plus className="w-4 h-4" />
-              新增
+              <Plus className="w-4 h-4" /> 新增
             </button>
           </div>
 
-          {recurringBillings.length === 0 ? (
-            <p className="text-purple-600 text-center py-4">尚無週期性請款設定</p>
-          ) : (
-            <div className="space-y-2">
-              {recurringBillings.map(recurring => (
-                <div key={recurring.id} className="bg-white rounded-lg p-4 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{recurring.customer_name}</span>
-                      <span className="text-gray-500">-</span>
-                      <span>{recurring.title}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs ${recurring.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {recurring.is_active ? '啟用' : '停用'}
-                      </span>
-                      {recurring.auto_send && (
-                        <span className="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">自動發送</span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {scheduleTypeConfig[recurring.schedule_type]} {recurring.schedule_day} 日
-                      {recurring.schedule_type === 'yearly' && ` (${recurring.schedule_month}月)`}
-                      {' | '}
-                      NT$ {(recurring.amount || 0).toLocaleString()}
-                      {recurring.next_run_at && (
-                        <span className="ml-2">
-                          下次：{new Date(recurring.next_run_at).toLocaleDateString('zh-TW')}
+          {recurringBillings.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full bg-white rounded-lg">
+                <thead className="bg-purple-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-purple-700">客戶</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-purple-700">項目</th>
+                    <th className="px-4 py-2 text-right text-sm font-medium text-purple-700">金額</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">週期</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">下次執行</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">狀態</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-purple-700">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-purple-100">
+                  {recurringBillings.map((recurring) => (
+                    <tr key={recurring.id} className="hover:bg-purple-50">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{recurring.customer_name || '-'}</div>
+                        {recurring.customer_line_group_name && (
+                          <div className="text-xs text-green-600 flex items-center gap-1">
+                            <MessageCircle className="w-3 h-3" /> {recurring.customer_line_group_name}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">{recurring.title || '-'}</td>
+                      <td className="px-4 py-3 text-right font-medium">
+                        NT$ {(recurring.amount || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm text-purple-600">
+                          {getScheduleTypeText(recurring.schedule_type)}
+                          {recurring.schedule_type === 'yearly' && ` ${recurring.schedule_month || 1}/${recurring.schedule_day || 1}`}
+                          {recurring.schedule_type === 'monthly' && ` ${recurring.schedule_day || 1}日`}
+                          {recurring.schedule_type === 'quarterly' && ` ${recurring.schedule_day || 1}日`}
                         </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleRecurringActive(recurring)}
-                      className={`p-2 rounded-lg ${recurring.is_active ? 'text-yellow-600 hover:bg-yellow-50' : 'text-green-600 hover:bg-green-50'}`}
-                      title={recurring.is_active ? '停用' : '啟用'}
-                    >
-                      {recurring.is_active ? <Clock className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                    </button>
-                    <button
-                      onClick={() => openEditRecurringModal(recurring)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRecurring(recurring.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm">
+                        {recurring.next_run_at
+                          ? new Date(recurring.next_run_at).toLocaleDateString('zh-TW')
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {recurring.is_active ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">
+                            啟用中
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                            已暫停
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleToggleRecurring(recurring.id, recurring.is_active)}
+                            className={`p-1.5 rounded ${recurring.is_active ? 'text-yellow-600 hover:bg-yellow-50' : 'text-green-600 hover:bg-green-50'}`}
+                            title={recurring.is_active ? '暫停' : '啟用'}
+                          >
+                            {recurring.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => openEditRecurringModal(recurring)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                            title="編輯"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRecurring(recurring.id)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                            title="刪除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-purple-600">
+              <Repeat className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <p>尚無週期性請款</p>
+              <p className="text-sm text-purple-500">設定後系統會自動產生請款單並發送通知</p>
             </div>
           )}
         </div>
       )}
 
-      {/* 統計卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl p-4 border">
-          <div className="text-sm text-gray-500">總請款</div>
-          <div className="text-xl font-bold text-gray-900">NT$ {stats.total.toLocaleString()}</div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-sm text-gray-500 mb-1">待收款金額</div>
+          <div className="text-2xl font-bold text-orange-600">
+            NT$ {(stats.pendingAmount || 0).toLocaleString()}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">{stats.sent + stats.overdue} 筆待收</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border">
-          <div className="text-sm text-gray-500">已收款</div>
-          <div className="text-xl font-bold text-green-600">NT$ {stats.paid.toLocaleString()}</div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-sm text-gray-500 mb-1">本月已收</div>
+          <div className="text-2xl font-bold text-green-600">
+            NT$ {(stats.paidAmount || 0).toLocaleString()}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">{stats.paid} 筆</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border">
-          <div className="text-sm text-gray-500">待收款</div>
-          <div className="text-xl font-bold text-yellow-600">NT$ {stats.pending.toLocaleString()}</div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-sm text-gray-500 mb-1">草稿</div>
+          <div className="text-2xl font-bold text-gray-600">{stats.draft}</div>
+          <div className="text-xs text-gray-400 mt-1">尚未發送</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border">
-          <div className="text-sm text-gray-500">總成本</div>
-          <div className="text-xl font-bold text-red-600">NT$ {stats.cost.toLocaleString()}</div>
-        </div>
-        <div className="bg-white rounded-xl p-4 border">
-          <div className="text-sm text-gray-500">毛利</div>
-          <div className="text-xl font-bold text-blue-600">NT$ {stats.profit.toLocaleString()}</div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-sm text-gray-500 mb-1">逾期</div>
+          <div className="text-2xl font-bold text-red-600">{stats.overdue}</div>
+          <div className="text-xs text-gray-400 mt-1">需要跟進</div>
         </div>
       </div>
 
-      {/* 篩選列 */}
-      <div className="bg-white rounded-xl p-4 border">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* 搜尋 */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="搜尋請款單號、客戶、項目..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg"
-            />
+      {/* Filter & Table */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex gap-2">
+            {['all', 'draft', 'sent', 'paid', 'overdue'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-lg text-sm ${statusFilter === status
+                  ? 'bg-brand-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+              >
+                {status === 'all' ? '全部' : getStatusText(status)}
+              </button>
+            ))}
           </div>
-
-          {/* 狀態篩選 */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border rounded-lg px-3 py-2"
-          >
-            <option value="all">全部狀態</option>
-            <option value="draft">草稿</option>
-            <option value="sent">已發送</option>
-            <option value="pending">待付款</option>
-            <option value="paid">已收款</option>
-            <option value="overdue">逾期</option>
-          </select>
-
-          {/* 時間篩選 */}
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            />
-            <span className="text-gray-400">~</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            />
-          </div>
-
-          {/* 匯出 */}
           <button
-            onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            onClick={loadBillings}
+            disabled={isLoading}
+            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
           >
-            <Download className="w-4 h-4" />
-            匯出
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-
-          {/* 批量刪除 */}
-          {selectedIds.size > 0 && (
-            <button
-              onClick={confirmBatchDelete}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
-              <Trash2 className="w-4 h-4" />
-              刪除 ({selectedIds.size})
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* 請款單列表 */}
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-4 py-3 text-left">
-                <button onClick={toggleSelectAll} className="p-1">
-                  {selectedIds.size === filteredBillings.length && filteredBillings.length > 0 ? (
-                    <CheckSquare className="w-5 h-5 text-blue-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">請款單號</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">客戶</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">項目</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">金額</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">成本</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">毛利</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">到期日</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">狀態</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {filteredBillings.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  尚無請款單資料
-                </td>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">請款單號</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">客戶</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">項目</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">金額</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">成本</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">毛利</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">到期日</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">狀態</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">操作</th>
               </tr>
-            ) : (
-              filteredBillings.map(billing => {
-                const status = statusConfig[billing.status] || statusConfig.draft;
-                const profit = (billing.total_amount || 0) - (billing.cost_amount || 0);
-                const profitRate = billing.total_amount ? (profit / billing.total_amount * 100).toFixed(0) : 0;
-
-                return (
-                  <tr key={billing.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <button onClick={() => toggleSelect(billing.id)} className="p-1">
-                        {selectedIds.has(billing.id) ? (
-                          <CheckSquare className="w-5 h-5 text-blue-600" />
-                        ) : (
-                          <Square className="w-5 h-5 text-gray-400" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{billing.billing_number}</div>
-                      <div className="text-xs text-gray-500">{billing.created_at.split('T')[0]}</div>
-                    </td>
-                    <td className="px-4 py-3">{billing.customer_name}</td>
-                    <td className="px-4 py-3">
-                      <div>{billing.title}</div>
-                      {billing.billing_month && (
-                        <div className="text-xs text-gray-500">{billing.billing_month}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="font-medium">NT$ {(billing.total_amount || 0).toLocaleString()}</div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {billing.cost_amount ? (
-                        <div className="text-sm text-red-600">
-                          NT$ {(billing.cost_amount || 0).toLocaleString()}
-                          {billing.cost_vendor_name && (
-                            <div className="text-xs text-gray-500">{billing.cost_vendor_name}</div>
-                          )}
-                        </div>
-                      ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="font-medium text-green-600">
-                        NT$ {profit.toLocaleString()}
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {billings.map((billing) => (
+                <tr key={billing.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="font-mono text-sm">{billing.billing_number || '-'}</div>
+                    <div className="text-xs text-gray-400">
+                      {billing.created_at ? new Date(billing.created_at).toLocaleDateString('zh-TW') : '-'}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{billing.customer_name || '-'}</div>
+                    {billing.customer_line_id && (
+                      <div className="text-xs text-green-600 flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" /> LINE 已綁定
                       </div>
-                      <div className="text-xs text-gray-500">{profitRate}%</div>
-                    </td>
-                    <td className="px-4 py-3">{billing.due_date}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs ${status.bg} ${status.color}`}>
-                        {status.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {billing.status === 'draft' && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(billing)}
-                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
-                              title="編輯"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleSendNotification(billing)}
-                              className="p-1.5 text-green-600 hover:bg-green-50 rounded"
-                              title="發送通知"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => confirmSingleDelete(billing.id)}
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                              title="刪除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm">{billing.title || '-'}</div>
+                    {billing.billing_month && (
+                      <div className="text-xs text-gray-400">{billing.billing_month}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="font-medium">NT$ {(billing.total_amount || 0).toLocaleString()}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {billing.cost_amount ? (
+                      <div>
+                        <div className="text-sm text-red-600">NT$ {(billing.cost_amount || 0).toLocaleString()}</div>
+                        {billing.cost_vendor_name && (
+                          <div className="text-xs text-gray-400">{billing.cost_vendor_name}</div>
                         )}
-                        {billing.status === 'sent' && (
-                          <>
-                            <button
-                              onClick={() => handleConfirmPayment(billing)}
-                              className="p-1.5 text-green-600 hover:bg-green-50 rounded"
-                              title="確認收款"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleSendNotification(billing)}
-                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
-                              title="再次發送"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {billing.status === 'pending' && (
+                      </div>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {billing.cost_amount ? (
+                      <div>
+                        <div className="text-sm font-medium text-green-600">
+                          NT$ {((billing.total_amount || 0) - (billing.cost_amount || 0)).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {(((billing.total_amount || 0) - (billing.cost_amount || 0)) / (billing.total_amount || 1) * 100).toFixed(0)}%
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className={`text-sm ${billing.due_date && new Date(billing.due_date) < new Date() && billing.status !== 'paid' ? 'text-red-600' : ''}`}>
+                      {billing.due_date ? new Date(billing.due_date).toLocaleDateString('zh-TW') : '-'}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${getStatusStyle(billing.status)}`}>
+                      {getStatusText(billing.status)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1">
+                      {billing.status === 'draft' && (
+                        <>
                           <button
-                            onClick={() => handleConfirmPayment(billing)}
+                            onClick={() => openSendPreview(billing)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                            title="發送請款通知"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEditModal(billing)}
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                            title="編輯"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(billing.id)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                            title="刪除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {billing.status === 'sent' && (
+                        <>
+                          <button
+                            onClick={() => openPaymentModal(billing)}
                             className="p-1.5 text-green-600 hover:bg-green-50 rounded"
                             title="確認收款"
                           >
-                            <Check className="w-4 h-4" />
+                            <CheckCircle className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                          <button
+                            onClick={() => openSendPreview(billing)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                            title="再次發送通知"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {billing.status === 'overdue' && (
+                        <>
+                          <button
+                            onClick={() => openPaymentModal(billing)}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                            title="確認收款"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openSendPreview(billing)}
+                            className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                            title="發送催款通知"
+                          >
+                            <AlertCircle className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {billing.status === 'paid' && (
+                        <span className="text-xs text-gray-400">
+                          {billing.paid_at && new Date(billing.paid_at).toLocaleDateString('zh-TW')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {billings.length === 0 && !isLoading && (
+          <div className="text-center py-12 text-gray-500">
+            <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>尚無請款單</p>
+            <p className="text-sm">點擊「新增請款單」開始建立</p>
+          </div>
+        )}
       </div>
 
-      {/* 刪除確認 Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">確認刪除</h3>
-            <p className="text-gray-600 mb-6">
-              {deleteTarget === 'single'
-                ? '確定要刪除這筆請款單嗎？此操作無法復原。'
-                : `確定要刪除 ${selectedIds.size} 筆請款單嗎？此操作無法復原。`
-              }
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => { setShowDeleteConfirm(false); setSingleDeleteId(null); }}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={executeDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                確認刪除
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 新增/編輯請款單 Modal */}
+      {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
                 {editingBilling ? '編輯請款單' : '新增請款單'}
-              </h2>
-              <button onClick={() => { setShowModal(false); resetForm(); }} className="p-2 hover:bg-gray-100 rounded-lg">
+              </h3>
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="space-y-4">
               {/* 客戶選擇 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">客戶 *</label>
-                  <select
-                    value={form.customer_id}
-                    onChange={(e) => handleCustomerSelect(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2"
-                  >
-                    <option value="">選擇客戶或輸入</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">客戶名稱 *</label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">客戶 *</label>
+                <select
+                  value={form.customer_id}
+                  onChange={(e) => handleCustomerSelect(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                >
+                  <option value="">選擇客戶或手動輸入...</option>
+                  {customers.filter(c => ['customer', 'both'].includes(c.customer_type)).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.line_user_id ? '📱' : ''}
+                    </option>
+                  ))}
+                </select>
+                {!form.customer_id && (
                   <input
                     type="text"
                     value={form.customer_name}
                     onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                    placeholder="客戶名稱"
+                    placeholder="或手動輸入客戶名稱"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 mt-2"
                   />
-                </div>
+                )}
+                {form.customer_line_group_id && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <MessageCircle className="w-3 h-3" /> LINE 群組：{form.customer_line_group_name || form.customer_line_group_id}
+                  </p>
+                )}
+                {!form.customer_line_group_id && form.customer_id && (
+                  <p className="text-xs text-orange-500 mt-1 flex items-center gap-1">
+                    <MessageCircle className="w-3 h-3" /> 此客戶尚未設定 LINE 群組
+                  </p>
+                )}
               </div>
 
-              {/* LINE 群組 */}
+              {/* 請款標題 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">LINE 通知群組</label>
-                <select
-                  value={form.customer_line_group_id}
-                  onChange={(e) => handleLineGroupSelect(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
-                >
-                  <option value="">選擇群組</option>
-                  {lineGroups.map(g => (
-                    <option key={g.group_id} value={g.group_id}>{g.group_name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款項目 *</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="例：1月份網站維護服務"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                />
               </div>
 
-              {/* 請款項目 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">請款項目 *</label>
-                  <input
-                    type="text"
-                    value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                    placeholder="例：網站維護費"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">請款月份</label>
-                  <input
-                    type="month"
-                    value={form.billing_month}
-                    onChange={(e) => setForm({ ...form, billing_month: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
+              {/* 請款月份 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款月份</label>
+                <input
+                  type="month"
+                  value={form.billing_month}
+                  onChange={(e) => setForm({ ...form, billing_month: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                />
               </div>
 
               {/* 金額 */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">金額 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">請款金額 *</label>
                   <input
                     type="number"
                     value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
+                    onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/^0+(?=\d)/, "") })}
                     placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">稅額</label>
-                  <input
-                    type="number"
-                    value={form.tax_amount}
-                    onChange={(e) => setForm({ ...form, tax_amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">到期日</label>
-                  <input
-                    type="date"
-                    value={form.due_date}
-                    onChange={(e) => setForm({ ...form, due_date: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                   />
                 </div>
               </div>
 
-              {/* 成本 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">成本金額</label>
-                  <input
-                    type="number"
-                    value={form.cost_amount}
-                    onChange={(e) => setForm({ ...form, cost_amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">成本廠商</label>
-                  <select
-                    value={form.cost_vendor_id}
-                    onChange={(e) => handleVendorSelect(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2"
-                  >
-                    <option value="">選擇廠商</option>
-                    {vendors.map(v => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* 到期日 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">付款期限 *</label>
+                <input
+                  type="date"
+                  value={form.due_date}
+                  onChange={(e) => setForm({ ...form, due_date: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                />
               </div>
 
               {/* 收款帳戶 */}
@@ -1275,41 +1317,104 @@ export default function BillingPage() {
                 <select
                   value={form.payment_account_id}
                   onChange={(e) => setForm({ ...form, payment_account_id: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 >
-                  <option value="">選擇收款帳戶</option>
-                  {paymentAccounts.map(a => (
+                  <option value="">選擇收款帳戶...</option>
+                  {paymentAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.bank_name} - {a.account_number} ({a.account_name})
+                      {a.bank_name} {a.account_number} {a.is_default ? '(預設)' : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* 備註 */}
+              {/* 成本資訊 */}
+              <div className="border-t pt-4 mt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4" />
+                  成本資訊（選填，只有外部廠商會記入成本）
+                </h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">外包廠商</label>
+                    <select
+                      value={form.cost_vendor_id}
+                      onChange={(e) => handleCostVendorSelect(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                    >
+                      <option value="">選擇外包廠商...</option>
+                      {vendors.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name} {v.vendor_type === 'company' ? '(公司)' : '(個人)'}
+                          {v.tax_id ? ` - ${v.tax_id}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={form.cost_vendor_name}
+                      onChange={(e) => setForm({ ...form, cost_vendor_name: e.target.value })}
+                      placeholder="或直接輸入廠商名稱"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 mt-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">成本金額</label>
+                    <input
+                      type="number"
+                      value={form.cost_amount}
+                      onChange={(e) => setForm({ ...form, cost_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                      placeholder="0"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                    />
+                  </div>
+                  {form.amount && form.cost_amount && (
+                    <div className="bg-green-50 rounded-lg p-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">毛利：</span>
+                        <span className="font-semibold text-green-600">
+                          NT$ {(parseFloat(form.amount || '0') - parseFloat(form.cost_amount || '0')).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-gray-600">毛利率：</span>
+                        <span className="font-semibold text-green-600">
+                          {((parseFloat(form.amount || '0') - parseFloat(form.cost_amount || '0')) / parseFloat(form.amount || '1') * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 說明 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">備註說明</label>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="選填"
                   rows={2}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
+            <div className="flex gap-3 mt-6">
               <button
-                onClick={() => { setShowModal(false); resetForm(); }}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                onClick={() => setShowModal(false)}
+                disabled={isSaving}
+                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={isSaving}
+                className="flex-1 py-2 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                儲存
+                {isSaving && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {isSaving ? '儲存中...' : '儲存'}
               </button>
             </div>
           </div>
@@ -1318,113 +1423,154 @@ export default function BillingPage() {
 
       {/* 週期性請款 Modal */}
       {showRecurringModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-purple-600" />
                 {editingRecurring ? '編輯週期性請款' : '新增週期性請款'}
-              </h2>
-              <button onClick={() => { setShowRecurringModal(false); resetRecurringForm(); }} className="p-2 hover:bg-gray-100 rounded-lg">
+              </h3>
+              <button onClick={() => setShowRecurringModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {/* 客戶 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">客戶 *</label>
-                  <select
-                    value={recurringForm.customer_id}
-                    onChange={(e) => handleCustomerSelect(e.target.value, true)}
-                    className="w-full border rounded-lg px-3 py-2"
-                  >
-                    <option value="">選擇客戶</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">客戶名稱 *</label>
-                  <input
-                    type="text"
-                    value={recurringForm.customer_name}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, customer_name: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
-              </div>
-
-              {/* LINE 群組 */}
+            <div className="space-y-4">
+              {/* 客戶選擇 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">LINE 通知群組</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">客戶 *</label>
                 <select
-                  value={recurringForm.customer_line_group_id}
-                  onChange={(e) => handleLineGroupSelect(e.target.value, true)}
-                  className="w-full border rounded-lg px-3 py-2"
+                  value={recurringForm.customer_id}
+                  onChange={(e) => handleRecurringCustomerSelect(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="">選擇群組</option>
-                  {lineGroups.map(g => (
-                    <option key={g.group_id} value={g.group_id}>{g.group_name}</option>
+                  <option value="">選擇客戶...</option>
+                  {customers.filter(c => ['customer', 'both'].includes(c.customer_type)).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.line_group_id ? '📱' : ''}
+                    </option>
                   ))}
                 </select>
+                {recurringForm.customer_line_group_id && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <MessageCircle className="w-3 h-3" /> LINE 群組：{recurringForm.customer_line_group_name}
+                  </p>
+                )}
               </div>
 
-              {/* 項目 & 金額 */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">請款項目 *</label>
-                  <input
-                    type="text"
-                    value={recurringForm.title}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">金額 *</label>
-                  <input
-                    type="number"
-                    value={recurringForm.amount}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">稅額</label>
-                  <input
-                    type="number"
-                    value={recurringForm.tax_amount}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, tax_amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
+              {/* 請款標題 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款項目 *</label>
+                <input
+                  type="text"
+                  value={recurringForm.title}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
+                  placeholder="例：網站主機維護費"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* 金額 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請款金額 *</label>
+                <input
+                  type="number"
+                  value={recurringForm.amount}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                  placeholder="0"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* 週期設定 */}
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">週期類型 *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'monthly', label: '每月' },
+                    { value: 'quarterly', label: '每季' },
+                    { value: 'yearly', label: '每年' }
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setRecurringForm({ ...recurringForm, schedule_type: type.value as any })}
+                      className={`px-4 py-2 rounded-lg border text-sm ${recurringForm.schedule_type === type.value
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* 成本 */}
+              {/* 日期設定 */}
               <div className="grid grid-cols-2 gap-4">
+                {recurringForm.schedule_type === 'yearly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">月份</label>
+                    <select
+                      value={recurringForm.schedule_month}
+                      onChange={(e) => setRecurringForm({ ...recurringForm, schedule_month: parseInt(e.target.value) })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                        <option key={month} value={month}>{month} 月</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">成本金額</label>
-                  <input
-                    type="number"
-                    value={recurringForm.cost_amount}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, cost_amount: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">成本廠商</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
                   <select
-                    value={recurringForm.cost_vendor_id}
-                    onChange={(e) => handleVendorSelect(e.target.value, true)}
-                    className="w-full border rounded-lg px-3 py-2"
+                    value={recurringForm.schedule_day}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, schedule_day: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">選擇廠商</option>
-                    {vendors.map(v => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                      <option key={day} value={day}>{day} 日</option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">付款期限（天）</label>
+                  <input
+                    type="number"
+                    value={recurringForm.days_before_due}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, days_before_due: parseInt(e.target.value) || 14 })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* 成本資訊 */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">成本資訊（選填）</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">外包廠商</label>
+                    <select
+                      value={recurringForm.cost_vendor_id}
+                      onChange={(e) => handleRecurringCostVendorSelect(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">選擇外包廠商...</option>
+                      {vendors.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">成本金額</label>
+                    <input
+                      type="number"
+                      value={recurringForm.cost_amount}
+                      onChange={(e) => setRecurringForm({ ...recurringForm, cost_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                      placeholder="0"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1434,110 +1580,310 @@ export default function BillingPage() {
                 <select
                   value={recurringForm.payment_account_id}
                   onChange={(e) => setRecurringForm({ ...recurringForm, payment_account_id: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="">選擇收款帳戶</option>
-                  {paymentAccounts.map(a => (
+                  <option value="">選擇收款帳戶...</option>
+                  {paymentAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.bank_name} - {a.account_number} ({a.account_name})
+                      {a.bank_name} {a.account_number} {a.is_default ? '(預設)' : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* 週期設定 */}
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">週期類型</label>
-                  <select
-                    value={recurringForm.schedule_type}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, schedule_type: e.target.value as any })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  >
-                    <option value="monthly">每月</option>
-                    <option value="quarterly">每季</option>
-                    <option value="yearly">每年</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="28"
-                    value={recurringForm.schedule_day}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, schedule_day: parseInt(e.target.value) || 1 })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
-                {recurringForm.schedule_type === 'yearly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">月份</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="12"
-                      value={recurringForm.schedule_month}
-                      onChange={(e) => setRecurringForm({ ...recurringForm, schedule_month: parseInt(e.target.value) || 1 })}
-                      className="w-full border rounded-lg px-3 py-2"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">付款期限(天)</label>
-                  <input
-                    type="number"
-                    value={recurringForm.days_before_due}
-                    onChange={(e) => setRecurringForm({ ...recurringForm, days_before_due: parseInt(e.target.value) || 14 })}
-                    className="w-full border rounded-lg px-3 py-2"
-                  />
-                </div>
+              {/* 預覽 */}
+              <div className="bg-purple-50 rounded-lg p-3 text-sm">
+                <p className="font-medium text-purple-800 mb-1">排程預覽</p>
+                <p className="text-purple-600">
+                  {recurringForm.schedule_type === 'yearly' && `每年 ${recurringForm.schedule_month} 月 ${recurringForm.schedule_day} 日`}
+                  {recurringForm.schedule_type === 'quarterly' && `每季 ${recurringForm.schedule_day} 日`}
+                  {recurringForm.schedule_type === 'monthly' && `每月 ${recurringForm.schedule_day} 日`}
+                  {' '}自動產生請款單{recurringForm.auto_send ? '並發送 LINE 通知' : '（草稿）'}
+                </p>
               </div>
 
-              {/* 自動發送 */}
-              <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="auto_send"
-                  checked={recurringForm.auto_send}
-                  onChange={(e) => setRecurringForm({ ...recurringForm, auto_send: e.target.checked })}
-                  className="w-5 h-5 rounded"
-                />
-                <label htmlFor="auto_send" className="flex-1">
-                  <div className="font-medium text-blue-800">自動發送 LINE 通知</div>
-                  <div className="text-sm text-blue-600">時間到時自動產生請款單並發送通知</div>
+              {/* 自動發送開關 */}
+              <div className="border-t pt-4">
+                <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <span className="font-medium text-gray-700">自動發送 LINE 通知</span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {recurringForm.auto_send
+                        ? '時間到自動發送請款通知'
+                        : '時間到只產生草稿，需手動發送'}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={recurringForm.auto_send}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, auto_send: e.target.checked })}
+                    className="w-5 h-5 rounded text-purple-600"
+                  />
                 </label>
               </div>
 
               {/* 訊息模板 */}
               {recurringForm.auto_send && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">訊息模板</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    訊息模板
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    可用變數：{'{客戶名稱}'} {'{請款項目}'} {'{金額}'} {'{到期日}'} {'{匯款帳戶}'}
+                  </p>
                   <textarea
                     value={recurringForm.message_template}
                     onChange={(e) => setRecurringForm({ ...recurringForm, message_template: e.target.value })}
-                    className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                    rows={8}
+                    rows={10}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm font-mono"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    可用變數：{'{客戶名稱}'} {'{請款項目}'} {'{金額}'} {'{到期日}'} {'{匯款帳戶}'}
-                  </p>
                 </div>
               )}
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
+            <div className="flex gap-3 mt-6">
               <button
-                onClick={() => { setShowRecurringModal(false); resetRecurringForm(); }}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                onClick={() => setShowRecurringModal(false)}
+                disabled={isSavingRecurring}
+                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 onClick={handleSaveRecurring}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                disabled={isSavingRecurring}
+                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                儲存
+                {isSavingRecurring && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {isSavingRecurring ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Confirmation Modal */}
+      {showPaymentModal && confirmingBilling && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">確認收款</h3>
+              <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="text-sm text-gray-500">請款單號</div>
+              <div className="font-mono">{confirmingBilling.billing_number || '-'}</div>
+              <div className="text-sm text-gray-500 mt-2">客戶</div>
+              <div className="font-medium">{confirmingBilling.customer_name || '-'}</div>
+              <div className="text-sm text-gray-500 mt-2">應收金額</div>
+              <div className="text-xl font-bold text-brand-primary-600">
+                NT$ {(confirmingBilling.total_amount || 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">實收金額 *</label>
+                <input
+                  type="number"
+                  value={paymentForm.paid_amount}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paid_amount: e.target.value.replace(/^0+(?=\d)/, "") })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">付款方式</label>
+                <select
+                  value={paymentForm.payment_method}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                >
+                  <option value="銀行轉帳">銀行轉帳</option>
+                  <option value="現金">現金</option>
+                  <option value="支票">支票</option>
+                  <option value="信用卡">信用卡</option>
+                  <option value="其他">其他</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
+                <input
+                  type="text"
+                  value={paymentForm.payment_note}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_note: e.target.value })}
+                  placeholder="選填"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                />
+              </div>
+
+              {(confirmingBilling.customer_line_id || confirmingBilling.customer_line_group_id) && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={paymentForm.send_notification}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, send_notification: e.target.checked })}
+                    className="rounded text-brand-primary-600"
+                  />
+                  <span className="text-sm">發送收款確認通知給客戶</span>
+                </label>
+              )}
+
+              {/* 發票開立選項 */}
+              <div className="border-t pt-4 mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                  <Receipt className="w-4 h-4" />
+                  開立發票
+                </label>
+
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'auto'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:bg-gray-50'
+                    }`}>
+                    <input
+                      type="radio"
+                      name="invoice_action"
+                      value="auto"
+                      checked={paymentForm.invoice_action === 'auto'}
+                      onChange={() => setPaymentForm({ ...paymentForm, invoice_action: 'auto' })}
+                      className="mt-0.5 text-brand-primary-600"
+                    />
+                    <div>
+                      <span className="text-sm font-medium">立即自動開立</span>
+                      <p className="text-xs text-gray-500">確認收款後自動開發票並發送通知</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${paymentForm.invoice_action === 'manual'
+                    ? 'border-brand-primary-500 bg-brand-primary-50'
+                    : 'border-gray-200 hover:bg-gray-50'
+                    }`}>
+                    <input
+                      type="radio"
+                      name="invoice_action"
+                      value="manual"
+                      checked={paymentForm.invoice_action === 'manual'}
+                      onChange={() => setPaymentForm({ ...paymentForm, invoice_action: 'manual' })}
+                      className="mt-0.5 text-brand-primary-600"
+                    />
+                    <div>
+                      <span className="text-sm font-medium">稍後手動開立</span>
+                      <p className="text-xs text-gray-500">跳轉到發票頁面自行開立</p>
+                    </div>
+                  </label>
+                </div>
+
+                {paymentForm.invoice_action === 'auto' && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">發票品項</label>
+                    <input
+                      type="text"
+                      value={paymentForm.invoice_item_name}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, invoice_item_name: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                      placeholder="服務費"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      預設為「服務費」，可依需求修改（如：網站架設費）
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                disabled={isConfirming}
+                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmPayment}
+                disabled={isConfirming}
+                className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isConfirming && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {isConfirming ? '處理中...' : paymentForm.invoice_action === 'auto' ? '確認收款並開發票' : '確認收款'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 發送預覽 Modal */}
+      {showPreviewModal && previewBilling && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">發送請款通知</h3>
+              <button onClick={() => setShowPreviewModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1">
+              {/* 發送對象 */}
+              <div className="bg-green-50 rounded-lg p-3 mb-4">
+                <div className="flex items-center gap-2 text-green-700">
+                  <MessageCircle className="w-4 h-4" />
+                  <span className="text-sm font-medium">
+                    發送至：{previewBilling.customer_line_group_name || previewBilling.customer_name || '-'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 請款資訊摘要 */}
+              <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-gray-500">請款單號：</span>
+                    <span className="font-mono">{previewBilling.billing_number || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">金額：</span>
+                    <span className="font-semibold text-brand-primary-600">
+                      NT$ {(previewBilling.total_amount || 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 訊息編輯 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  訊息內容（可編輯）
+                </label>
+                <textarea
+                  value={previewMessage}
+                  onChange={(e) => setPreviewMessage(e.target.value)}
+                  rows={12}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500 text-sm font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 p-4 border-t bg-gray-50">
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                disabled={isSending}
+                className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmSend}
+                disabled={isSending}
+                className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSending && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {isSending ? '發送中...' : '確認發送'}
               </button>
             </div>
           </div>
