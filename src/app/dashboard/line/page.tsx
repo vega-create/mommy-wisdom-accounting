@@ -74,6 +74,19 @@ interface LineSchedule {
 
 type TabType = 'settings' | 'groups' | 'templates' | 'send' | 'schedules' | 'history';
 
+// ========== 解析模板中的變數 ==========
+const extractVariables = (content: string): string[] => {
+  const regex = /\{\{(\w+)\}\}/g;
+  const variables: string[] = [];
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    if (!variables.includes(match[1])) {
+      variables.push(match[1]);
+    }
+  }
+  return variables;
+};
+
 export default function LinePage() {
   const { company } = useAuthStore();
   const searchParams = useSearchParams();
@@ -231,9 +244,13 @@ export default function LinePage() {
     try {
       const url = '/api/line/templates';
       const method = editingTemplate ? 'PUT' : 'POST';
+
+      // ✅ 自動解析模板中的變數
+      const variables = extractVariables(templateForm.content);
+
       const body = editingTemplate
-        ? { id: editingTemplate.id, ...templateForm }
-        : { company_id: company.id, ...templateForm };
+        ? { id: editingTemplate.id, ...templateForm, variables }
+        : { company_id: company.id, ...templateForm, variables };
 
       const response = await fetch(url, {
         method,
@@ -768,6 +785,15 @@ export default function LinePage() {
     }
   };
 
+  // 取得模板的變數（優先使用資料庫的，若沒有則即時解析）
+  const getTemplateVariables = (template: LineTemplate): string[] => {
+    if (template.variables && template.variables.length > 0) {
+      return template.variables;
+    }
+    // 如果資料庫沒有變數，即時從內容解析
+    return extractVariables(template.content);
+  };
+
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'settings', label: 'API 設定', icon: <Settings className="w-4 h-4" /> },
     { id: 'groups', label: '群組管理', icon: <Users className="w-4 h-4" /> },
@@ -1019,44 +1045,47 @@ export default function LinePage() {
               </div>
             ) : templates.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {templates.map((template) => (
-                  <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-medium">{template.name}</h3>
-                        {template.category && <span className="text-xs text-gray-500">{template.category}</span>}
+                {templates.map((template) => {
+                  const templateVars = getTemplateVariables(template);
+                  return (
+                    <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 className="font-medium">{template.name}</h3>
+                          {template.category && <span className="text-xs text-gray-500">{template.category}</span>}
+                        </div>
+                        <span className="text-xs text-gray-400">使用 {template.usage_count || 0} 次</span>
                       </div>
-                      <span className="text-xs text-gray-400">使用 {template.usage_count || 0} 次</span>
+
+                      <p className="text-sm text-gray-600 line-clamp-3 mb-3 whitespace-pre-line">{template.content}</p>
+
+                      {templateVars.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          {templateVars.map((v) => (
+                            <span key={v} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{`{{${v}}}`}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-3 border-t">
+                        <span className={`text-xs ${template.is_active ? 'text-green-600' : 'text-gray-400'}`}>
+                          {template.is_active ? '● 啟用中' : '○ 已停用'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setPreviewTemplate(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="預覽">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openEditTemplateModal(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="編輯">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDeleteTemplate(template.id)} className="p-1 text-gray-500 hover:text-red-600" title="刪除">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-
-                    <p className="text-sm text-gray-600 line-clamp-3 mb-3 whitespace-pre-line">{template.content}</p>
-
-                    {template.variables && template.variables.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {template.variables.map((v) => (
-                          <span key={v} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{`{{${v}}}`}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-3 border-t">
-                      <span className={`text-xs ${template.is_active ? 'text-green-600' : 'text-gray-400'}`}>
-                        {template.is_active ? '● 啟用中' : '○ 已停用'}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setPreviewTemplate(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="預覽">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => openEditTemplateModal(template)} className="p-1 text-gray-500 hover:text-brand-primary-600" title="編輯">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDeleteTemplate(template.id)} className="p-1 text-gray-500 hover:text-red-600" title="刪除">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-12 text-gray-500">
@@ -1166,10 +1195,11 @@ export default function LinePage() {
                         onChange={(e) => {
                           setSendForm({ ...sendForm, templateId: e.target.value });
                           const selectedTemplate = templates.find(t => t.id === e.target.value);
-                          if (selectedTemplate?.variables) {
-                            const vars: Record<string, string> = {};
-                            selectedTemplate.variables.forEach(v => { vars[v] = ''; });
-                            setTemplateVariables(vars);
+                          if (selectedTemplate) {
+                            const vars = getTemplateVariables(selectedTemplate);
+                            const varsObj: Record<string, string> = {};
+                            vars.forEach(v => { varsObj[v] = ''; });
+                            setTemplateVariables(varsObj);
                           } else {
                             setTemplateVariables({});
                           }
@@ -1184,11 +1214,13 @@ export default function LinePage() {
 
                       {sendForm.templateId && (() => {
                         const selectedTemplate = templates.find(t => t.id === sendForm.templateId);
-                        if (!selectedTemplate?.variables?.length) return null;
+                        if (!selectedTemplate) return null;
+                        const vars = getTemplateVariables(selectedTemplate);
+                        if (vars.length === 0) return null;
                         return (
                           <div className="mt-3 p-3 bg-gray-50 rounded-lg space-y-3">
                             <p className="text-sm font-medium text-gray-700">填入模板變數：</p>
-                            {selectedTemplate.variables.map((varName) => (
+                            {vars.map((varName) => (
                               <div key={varName}>
                                 <label className="block text-xs text-gray-500 mb-1">{`{{${varName}}}`}</label>
                                 <input
@@ -1534,6 +1566,18 @@ export default function LinePage() {
                 />
                 <p className="text-xs text-gray-500 mt-1">可用變數：{`{{customer_name}}`}, {`{{amount}}`}, {`{{due_date}}`}, {`{{invoice_number}}`} 等</p>
               </div>
+
+              {/* 即時預覽解析出的變數 */}
+              {templateForm.content && extractVariables(templateForm.content).length > 0 && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-medium text-blue-800 mb-2">偵測到的變數：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {extractVariables(templateForm.content).map((v) => (
+                      <span key={v} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-mono">{`{{${v}}}`}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowTemplateModal(false)} disabled={isSavingTemplate} className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
@@ -1557,16 +1601,20 @@ export default function LinePage() {
             <div className="bg-[#7B8D93] rounded-2xl p-4">
               <div className="bg-[#8DE055] rounded-2xl rounded-tr-sm p-3 max-w-[90%] ml-auto text-sm whitespace-pre-line">{previewTemplate.content}</div>
             </div>
-            {previewTemplate.variables && previewTemplate.variables.length > 0 && (
-              <div className="mt-4">
-                <p className="text-sm text-gray-500 mb-2">可用變數：</p>
-                <div className="flex flex-wrap gap-2">
-                  {previewTemplate.variables.map((v) => (
-                    <span key={v} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded font-mono">{`{{${v}}}`}</span>
-                  ))}
+            {(() => {
+              const vars = getTemplateVariables(previewTemplate);
+              if (vars.length === 0) return null;
+              return (
+                <div className="mt-4">
+                  <p className="text-sm text-gray-500 mb-2">可用變數：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {vars.map((v) => (
+                      <span key={v} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded font-mono">{`{{${v}}}`}</span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1644,10 +1692,11 @@ export default function LinePage() {
                       onChange={(e) => {
                         setScheduleForm({ ...scheduleForm, template_id: e.target.value });
                         const selectedTemplate = templates.find(t => t.id === e.target.value);
-                        if (selectedTemplate?.variables) {
-                          const vars: Record<string, string> = {};
-                          selectedTemplate.variables.forEach(v => { vars[v] = ''; });
-                          setScheduleVariables(vars);
+                        if (selectedTemplate) {
+                          const vars = getTemplateVariables(selectedTemplate);
+                          const varsObj: Record<string, string> = {};
+                          vars.forEach(v => { varsObj[v] = ''; });
+                          setScheduleVariables(varsObj);
                         } else {
                           setScheduleVariables({});
                         }
@@ -1662,12 +1711,14 @@ export default function LinePage() {
 
                     {scheduleForm.template_id && (() => {
                       const selectedTemplate = templates.find(t => t.id === scheduleForm.template_id);
-                      if (!selectedTemplate?.variables?.length) return null;
+                      if (!selectedTemplate) return null;
+                      const vars = getTemplateVariables(selectedTemplate);
+                      if (vars.length === 0) return null;
                       return (
                         <div className="mt-3 p-3 bg-gray-50 rounded-lg space-y-3">
                           <p className="text-sm font-medium text-gray-700">填入模板變數：</p>
                           <p className="text-xs text-gray-500">提示：週期排程的變數值會在每次發送時使用相同值</p>
-                          {selectedTemplate.variables.map((varName) => (
+                          {vars.map((varName) => (
                             <div key={varName}>
                               <label className="block text-xs text-gray-500 mb-1">{`{{${varName}}}`}</label>
                               <input
