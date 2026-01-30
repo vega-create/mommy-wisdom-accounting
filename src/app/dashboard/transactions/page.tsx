@@ -347,7 +347,7 @@ export default function TransactionsPage() {
   };
 
   const expenseCategories = accountCategories.filter(c => c.type === 'expense' && c.is_active);
-  const revenueCategories = accountCategories.filter(c => c.type === 'income' && c.is_active);
+  const revenueCategories = accountCategories.filter(c => c.type === 'revenue' && c.is_active);
 
   // 計算總金額（含手續費）
   const totalAmount = formData.amount + (formData.has_fee ? formData.fee_amount : 0);
