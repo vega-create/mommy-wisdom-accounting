@@ -44,6 +44,7 @@ const navigation = [
       { name: '總分類帳', href: '/dashboard/reports/ledger', icon: ListTree },
       { name: '資產負債表', href: '/dashboard/reports/balance-sheet', icon: PieChart },
       { name: '損益表', href: '/dashboard/reports/income-statement', icon: TrendingUp },
+      { name: '數據分析', href: '/dashboard/analytics', icon: BarChart3 },
     ],
   },
   { name: 'LINE 通知', href: '/dashboard/line', icon: MessageSquare },
