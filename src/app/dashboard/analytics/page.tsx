@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { format, startOfMonth, endOfMonth, subMonths, startOfYear, parseISO } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
@@ -8,20 +9,24 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell,
   BarChart, Bar,
+  AreaChart, Area,
 } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, BarChart3, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, BarChart3, Calendar, LineChartIcon, AreaChartIcon } from 'lucide-react';
 
 // 顏色設定
 const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
 
 // 快速日期範圍
 const dateRangePresets = [
-  { label: '本月', getValue: () => ({ start: startOfMonth(new Date()), end: endOfMonth(new Date()) }) },
-  { label: '上月', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 1)), end: endOfMonth(subMonths(new Date(), 1)) }) },
-  { label: '近3個月', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 2)), end: endOfMonth(new Date()) }) },
-  { label: '近6個月', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 5)), end: endOfMonth(new Date()) }) },
-  { label: '今年', getValue: () => ({ start: startOfYear(new Date()), end: new Date() }) },
+  { label: '本月', key: 'this-month', getValue: () => ({ start: startOfMonth(new Date()), end: endOfMonth(new Date()) }) },
+  { label: '上月', key: 'last-month', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 1)), end: endOfMonth(subMonths(new Date(), 1)) }) },
+  { label: '近3個月', key: '3-months', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 2)), end: endOfMonth(new Date()) }) },
+  { label: '近6個月', key: '6-months', getValue: () => ({ start: startOfMonth(subMonths(new Date(), 5)), end: endOfMonth(new Date()) }) },
+  { label: '今年', key: 'this-year', getValue: () => ({ start: startOfYear(new Date()), end: new Date() }) },
 ];
+
+// 圖表類型
+type ChartType = 'line' | 'bar' | 'area';
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('zh-TW', {
@@ -32,13 +37,66 @@ function formatCurrency(amount: number): string {
 }
 
 export default function AnalyticsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { transactions, customers } = useDataStore();
-  
-  const [dateRange, setDateRange] = useState(() => {
-    const preset = dateRangePresets[4]; // 預設今年
+
+  // 從 URL 讀取參數
+  const urlPeriod = searchParams.get('period') || '6-months';
+  const urlChartType = (searchParams.get('chart') || 'line') as ChartType;
+  const urlStartDate = searchParams.get('start') || '';
+  const urlEndDate = searchParams.get('end') || '';
+
+  const [activePeriod, setActivePeriod] = useState(urlPeriod);
+  const [chartType, setChartType] = useState<ChartType>(urlChartType);
+  const [customStart, setCustomStart] = useState(urlStartDate);
+  const [customEnd, setCustomEnd] = useState(urlEndDate);
+
+  // 計算日期範圍
+  const dateRange = useMemo(() => {
+    if (activePeriod === 'custom' && customStart && customEnd) {
+      return {
+        start: parseISO(customStart),
+        end: parseISO(customEnd),
+      };
+    }
+    const preset = dateRangePresets.find(p => p.key === activePeriod) || dateRangePresets[3];
     return preset.getValue();
-  });
-  const [activePeriod, setActivePeriod] = useState('今年');
+  }, [activePeriod, customStart, customEnd]);
+
+  // 更新 URL 參數
+  const updateURL = (period: string, chart: ChartType, start?: string, end?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    params.set('chart', chart);
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    router.replace(`/dashboard/analytics?${params.toString()}`, { scroll: false });
+  };
+
+  // 處理期間變更
+  const handlePeriodChange = (preset: typeof dateRangePresets[0]) => {
+    setActivePeriod(preset.key);
+    setCustomStart('');
+    setCustomEnd('');
+    updateURL(preset.key, chartType);
+  };
+
+  // 處理自訂日期變更
+  const handleCustomDateChange = (start: string, end: string) => {
+    setCustomStart(start);
+    setCustomEnd(end);
+    if (start && end) {
+      setActivePeriod('custom');
+      updateURL('custom', chartType, start, end);
+    }
+  };
+
+  // 處理圖表類型變更
+  const handleChartTypeChange = (type: ChartType) => {
+    setChartType(type);
+    updateURL(activePeriod, type, customStart, customEnd);
+  };
 
   // 篩選期間內的交易
   const filteredTransactions = useMemo(() => {
@@ -98,7 +156,7 @@ export default function AnalyticsPage() {
     return Object.entries(byCustomer)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 8); // 取前8名
+      .slice(0, 8);
   }, [filteredTransactions, customers]);
 
   // 支出分類
@@ -108,7 +166,6 @@ export default function AnalyticsPage() {
     filteredTransactions
       .filter(t => t.transaction_type === 'expense')
       .forEach(t => {
-        // 從描述中取得分類，或用預設
         const category = t.description?.split('-')[0]?.trim() || '其他支出';
         byCategory[category] = (byCategory[category] || 0) + t.amount + (t.fee_amount || 0);
       });
@@ -119,9 +176,64 @@ export default function AnalyticsPage() {
       .slice(0, 8);
   }, [filteredTransactions]);
 
-  const handleDateRangeChange = (preset: typeof dateRangePresets[0]) => {
-    setDateRange(preset.getValue());
-    setActivePeriod(preset.label);
+  // 渲染趨勢圖
+  const renderTrendChart = () => {
+    if (monthlyTrend.length === 0) {
+      return (
+        <div className="h-[300px] flex items-center justify-center text-gray-400">
+          此期間沒有交易資料
+        </div>
+      );
+    }
+
+    const commonProps = {
+      data: monthlyTrend,
+    };
+
+    switch (chartType) {
+      case 'bar':
+        return (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
+              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Legend />
+              <Bar dataKey="income" name="收入" fill="#10B981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="expense" name="支出" fill="#EF4444" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        );
+      case 'area':
+        return (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
+              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Legend />
+              <Area type="monotone" dataKey="income" name="收入" stroke="#10B981" fill="#10B98133" strokeWidth={2} />
+              <Area type="monotone" dataKey="expense" name="支出" stroke="#EF4444" fill="#EF444433" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        );
+      default:
+        return (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
+              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Legend />
+              <Line type="monotone" dataKey="income" name="收入" stroke="#10B981" strokeWidth={3} dot={{ fill: '#10B981', strokeWidth: 2 }} />
+              <Line type="monotone" dataKey="expense" name="支出" stroke="#EF4444" strokeWidth={3} dot={{ fill: '#EF4444', strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        );
+    }
   };
 
   return (
@@ -138,13 +250,13 @@ export default function AnalyticsPage() {
           <Calendar className="w-4 h-4 text-gray-500" />
           <span className="text-sm font-medium text-gray-700">選擇期間</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 mb-3">
           {dateRangePresets.map((preset) => (
             <button
-              key={preset.label}
-              onClick={() => handleDateRangeChange(preset)}
+              key={preset.key}
+              onClick={() => handlePeriodChange(preset)}
               className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                activePeriod === preset.label
+                activePeriod === preset.key
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
@@ -152,7 +264,37 @@ export default function AnalyticsPage() {
               {preset.label}
             </button>
           ))}
+          <button
+            onClick={() => setActivePeriod('custom')}
+            className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+              activePeriod === 'custom'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            自訂
+          </button>
         </div>
+        
+        {/* 自訂日期選擇 */}
+        {activePeriod === 'custom' && (
+          <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => handleCustomDateChange(e.target.value, customEnd)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <span className="text-gray-400">至</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => handleCustomDateChange(customStart, e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        )}
+        
         <p className="text-xs text-gray-400 mt-2">
           {format(dateRange.start, 'yyyy/MM/dd')} ~ {format(dateRange.end, 'yyyy/MM/dd')}
         </p>
@@ -198,44 +340,45 @@ export default function AnalyticsPage() {
 
       {/* 收入/支出趨勢圖 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-5 h-5 text-gray-600" />
-          <h2 className="text-lg font-semibold text-gray-900">收入/支出趨勢</h2>
-        </div>
-        {monthlyTrend.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={monthlyTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
-              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
-              <Tooltip 
-                formatter={(value: number) => formatCurrency(value)}
-                labelStyle={{ color: '#374151' }}
-              />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="income" 
-                name="收入" 
-                stroke="#10B981" 
-                strokeWidth={3}
-                dot={{ fill: '#10B981', strokeWidth: 2 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="expense" 
-                name="支出" 
-                stroke="#EF4444" 
-                strokeWidth={3}
-                dot={{ fill: '#EF4444', strokeWidth: 2 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[300px] flex items-center justify-center text-gray-400">
-            此期間沒有交易資料
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-gray-600" />
+            <h2 className="text-lg font-semibold text-gray-900">收入/支出趨勢</h2>
           </div>
-        )}
+          
+          {/* 圖表類型切換 */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => handleChartTypeChange('line')}
+              className={`p-2 rounded-md transition-colors ${
+                chartType === 'line' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="折線圖"
+            >
+              <LineChartIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleChartTypeChange('bar')}
+              className={`p-2 rounded-md transition-colors ${
+                chartType === 'bar' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="長條圖"
+            >
+              <BarChart3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleChartTypeChange('area')}
+              className={`p-2 rounded-md transition-colors ${
+                chartType === 'area' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              title="面積圖"
+            >
+              <AreaChartIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        
+        {renderTrendChart()}
       </div>
 
       {/* 圓餅圖區塊 */}
