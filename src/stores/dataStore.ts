@@ -297,7 +297,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (!company) return;
 
     const { data } = await supabase
-      .from('acct_account_categories')
+      .from('acct_chart_of_accounts')
       .select('*')
       .eq('company_id', company.id)
       .order('code', { ascending: true });
@@ -310,7 +310,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (!company) return null;
 
     const { data: newCategory, error } = await supabase
-      .from('acct_account_categories')
+      .from('acct_chart_of_accounts')
       .insert({
         ...data,
         company_id: company.id,
