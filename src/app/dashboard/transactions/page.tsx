@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -388,7 +389,7 @@ export default function TransactionsPage() {
                 <th>描述</th>
                 <th>帳戶</th>
                 <th>客戶/廠商</th>
-                <th>統編</th>
+                <th>發票號碼</th>
                 <th className="text-right">金額</th>
                 <th className="text-right">操作</th>
               </tr>
