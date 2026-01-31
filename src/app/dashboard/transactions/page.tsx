@@ -163,7 +163,7 @@ export default function TransactionsPage() {
   };
 
   const exportToCSV = () => {
-    const headers = ['日期', '類型', '描述', '帳戶', '客戶/廠商', '統編', '金額', '手續費', '備註'];
+    const headers = ['日期', '類型', '描述', '帳戶', '客戶/廠商', '發票號碼', '金額', '手續費', '備註'];
     const rows = filteredTransactions.map(t => {
       const typeLabel = transactionTypeConfig[t.transaction_type].label;
       let accountName = '';
@@ -555,8 +555,8 @@ export default function TransactionsPage() {
               </div>
               {formData.transaction_type !== 'transfer' && (
                 <div>
-                  <label className="input-label">統一編號（發票用）</label>
-                  <input type="text" value={formData.tax_id} onChange={e => setFormData({ ...formData, tax_id: e.target.value })} className="input-field" placeholder="選填，8位數字" maxLength={8} />
+                  <label className="input-label">發票號碼</label>
+                  <input type="text" value={formData.tax_id} onChange={e => setFormData({ ...formData, tax_id: e.target.value })} className="input-field" placeholder="選填，例：AB12345678" maxLength={8} />
                 </div>
               )}
               <div>
