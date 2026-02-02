@@ -238,6 +238,7 @@ export const useDataStore = create<DataState>((set, get) => ({
       .from('acct_customers')
       .select('*')
       .eq('company_id', company.id)
+      .eq('is_active', true)
       .order('created_at', { ascending: true });
 
     set({ customers: data || [] });
