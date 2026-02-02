@@ -72,6 +72,14 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', billing_id);
 
+   // 查詢預設收入科目
+    const { data: incomeCat } = await supabase
+      .from('acct_account_categories')
+      .select('id')
+      .eq('company_id', billing.company_id)
+      .eq('code', '4100')
+      .single();
+
     // 建立交易記錄
     const { data: transaction, error: transactionError } = await supabase
       .from('acct_transactions')
@@ -83,6 +91,7 @@ export async function POST(request: NextRequest) {
         amount: parseFloat(paid_amount),
         customer_id: billing.customer_id || null,
         bank_account_id: bank_account_id || null,
+        category_id: incomeCat?.id || null,
         notes: payment_note || `請款單收款：${billing.billing_number}`
       })
       .select()
