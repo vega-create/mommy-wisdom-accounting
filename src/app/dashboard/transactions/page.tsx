@@ -148,47 +148,52 @@ export default function TransactionsPage() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTransactions, currentPage]);
-// 計算每筆交易的帳戶餘額（從舊到新累計）
+// 計算每筆交易的帳戶餘額（用全部交易，從舊到新累計）
   const balanceMap = useMemo(() => {
-    const map = new Map<string, number>();
-    
-    // 先取得各帳戶的初始餘額
+    // 各帳戶初始餘額
+    const accountBal = new Map<string, number>();
     bankAccounts.forEach(a => {
       if (a.company_id === company?.id) {
-        map.set(a.id, a.initial_balance || 0);
+        accountBal.set(a.id, a.initial_balance || 0);
       }
     });
-    
-    // 按日期從舊到新排序所有交易
-    const sorted = [...filteredTransactions].sort(
-      (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
-    );
-    
+
+    // 全部交易按日期從舊到新排序
+    const allSorted = [...transactions]
+      .filter(t => t.company_id === company?.id)
+      .sort((a, b) => {
+        const diff = new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime();
+        return diff !== 0 ? diff : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+
     // 累計每筆交易後的帳戶餘額
     const txBalances = new Map<string, number>();
-    
-    sorted.forEach(t => {
+
+    allSorted.forEach(t => {
       if (t.transaction_type === 'income' && t.bank_account_id) {
-        map.set(t.bank_account_id, (map.get(t.bank_account_id) || 0) + t.amount);
-        txBalances.set(t.id, map.get(t.bank_account_id)!);
+        accountBal.set(t.bank_account_id, (accountBal.get(t.bank_account_id) || 0) + t.amount);
+        txBalances.set(t.id, accountBal.get(t.bank_account_id)!);
       } else if (t.transaction_type === 'expense' && t.bank_account_id) {
         const total = t.amount + (t.has_fee && t.fee_amount ? t.fee_amount : 0);
-        map.set(t.bank_account_id, (map.get(t.bank_account_id) || 0) - total);
-        txBalances.set(t.id, map.get(t.bank_account_id)!);
+        accountBal.set(t.bank_account_id, (accountBal.get(t.bank_account_id) || 0) - total);
+        txBalances.set(t.id, accountBal.get(t.bank_account_id)!);
       } else if (t.transaction_type === 'transfer') {
         const feeAmt = t.has_fee && t.fee_amount ? t.fee_amount : 0;
         if (t.from_account_id) {
-          map.set(t.from_account_id, (map.get(t.from_account_id) || 0) - t.amount - feeAmt);
+          accountBal.set(t.from_account_id, (accountBal.get(t.from_account_id) || 0) - t.amount - feeAmt);
+          txBalances.set(t.id, accountBal.get(t.from_account_id)!);
         }
         if (t.to_account_id) {
-          map.set(t.to_account_id, (map.get(t.to_account_id) || 0) + t.amount);
+          accountBal.set(t.to_account_id, (accountBal.get(t.to_account_id) || 0) + t.amount);
+          if (!t.from_account_id) {
+            txBalances.set(t.id, accountBal.get(t.to_account_id)!);
+          }
         }
-        txBalances.set(t.id, map.get(t.from_account_id || t.to_account_id || '') || 0);
       }
     });
-    
+
     return txBalances;
-  }, [filteredTransactions, bankAccounts, company]);
+  }, [transactions, bankAccounts, company]);
   const handleFilterChange = (newFilter: TransactionType | 'all') => {
     setFilterType(newFilter);
     setCurrentPage(1);
