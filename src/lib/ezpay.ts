@@ -1,6 +1,6 @@
 // lib/ezpay.ts
-// ezPay 電子發票 API 串接 - 修正版
-// 關鍵修正：使用 32 字節塊的 PKCS7 填充（與 PHP addpadding 函數一致）
+// ezPay 電子發票 API 串接
+// 加密方式與 /api/invoices/issue/route.ts 一致（標準 PKCS7 填充）
 
 import crypto from 'crypto';
 
@@ -71,74 +71,37 @@ export interface InvalidInvoiceParams {
 }
 
 /**
- * 模擬 PHP addpadding 函數
- * 使用 32 字節塊的 PKCS7 填充（ezPay 特殊要求）
- */
-function addPadding(str: string, blocksize: number = 32): string {
-  const len = Buffer.byteLength(str, 'utf8');
-  const pad = blocksize - (len % blocksize);
-  return str + String.fromCharCode(pad).repeat(pad);
-}
-
-/**
  * 模擬 PHP http_build_query
  * URL 編碼所有值
  */
 function httpBuildQuery(params: Record<string, string | number>): string {
   return Object.entries(params)
     .map(([key, value]) => {
-      // PHP 的 http_build_query 會對值進行 URL 編碼
-      // 空格會變成 +，其他特殊字元會變成 %XX
       const encoded = encodeURIComponent(String(value))
-        .replace(/%20/g, '+'); // PHP 的 http_build_query 用 + 代替空格
+        .replace(/%20/g, '+');
       return `${key}=${encoded}`;
     })
     .join('&');
 }
 
 /**
- * AES-256-CBC 加密（ezPay 專用）
- * 使用 OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING，因為我們已手動填充
+ * AES-256-CBC 加密（標準 PKCS7 填充）
+ * 與 /api/invoices/issue/route.ts 一致
  */
 function aesEncrypt(data: string, key: string, iv: string): string {
-  // 1. 先做 32 字節塊的 PKCS7 填充（與 PHP addpadding 一致）
-  const paddedData = addPadding(data, 32);
-
-  // 2. 使用 AES-256-CBC 加密，禁用自動填充
-  const cipher = crypto.createCipheriv(
-    'aes-256-cbc',
-    Buffer.from(key, 'utf8'),
-    Buffer.from(iv, 'utf8')
-  );
-  cipher.setAutoPadding(false); // 禁用自動填充，因為我們已手動填充
-
-  // 3. 加密並輸出 hex（小寫）
-  let encrypted = cipher.update(paddedData, 'utf8', 'hex');
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-
   return encrypted;
 }
 
 /**
- * AES-256-CBC 解密
+ * AES-256-CBC 解密（標準 PKCS7 填充）
  */
 function aesDecrypt(data: string, key: string, iv: string): string {
-  const decipher = crypto.createDecipheriv(
-    'aes-256-cbc',
-    Buffer.from(key, 'utf8'),
-    Buffer.from(iv, 'utf8')
-  );
-  decipher.setAutoPadding(false); // 禁用自動填充
-
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
   let decrypted = decipher.update(data, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-
-  // 移除 PKCS7 填充
-  const padLen = decrypted.charCodeAt(decrypted.length - 1);
-  if (padLen > 0 && padLen <= 32) {
-    decrypted = decrypted.slice(0, -padLen);
-  }
-
   return decrypted;
 }
 
@@ -166,14 +129,14 @@ export async function issueInvoice(
   const itemPrice = params.items.map(i => i.price).join('|');
   const itemAmount = params.items.map(i => i.amount).join('|');
 
-  // 建立 PostData 參數（順序與 PHP 範例一致）
+  // 建立 PostData 參數
   const postData: Record<string, string | number> = {
     RespondType: 'JSON',
     Version: '1.5',
     TimeStamp: timestamp,
     TransNum: '',
     MerchantOrderNo: params.orderNumber,
-    Status: '1', // 1=立即開立
+    Status: '1',
     CreateStatusTime: '',
     Category: params.invoiceType,
     BuyerName: params.buyerName,
