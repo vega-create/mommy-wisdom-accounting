@@ -57,6 +57,14 @@ export async function POST(request: NextRequest) {
 
     const today = new Date().toISOString().split('T')[0];
 
+    // 查詢預設費用科目（勞務成本）
+    const { data: expenseCat } = await supabase
+      .from('acct_account_categories')
+      .select('id')
+      .eq('company_id', payable.company_id)
+      .eq('code', '5100')
+      .single();
+
     // 1. 建立支出交易記錄
     console.log('建立支出交易記錄...');
     const { data: transaction, error: transactionError } = await supabase
@@ -69,6 +77,7 @@ export async function POST(request: NextRequest) {
         amount: parseFloat(paid_amount),
         customer_id: payable.vendor_id,
         bank_account_id: bank_account_id || null,
+        category_id: expenseCat?.id || null,
         notes: payment_note || `應付款項付款：${payable.payable_number}`
       })
       .select()
