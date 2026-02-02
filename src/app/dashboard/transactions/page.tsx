@@ -148,7 +148,47 @@ export default function TransactionsPage() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTransactions, currentPage]);
-
+// 計算每筆交易的帳戶餘額（從舊到新累計）
+  const balanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    
+    // 先取得各帳戶的初始餘額
+    bankAccounts.forEach(a => {
+      if (a.company_id === company?.id) {
+        map.set(a.id, a.initial_balance || 0);
+      }
+    });
+    
+    // 按日期從舊到新排序所有交易
+    const sorted = [...filteredTransactions].sort(
+      (a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+    );
+    
+    // 累計每筆交易後的帳戶餘額
+    const txBalances = new Map<string, number>();
+    
+    sorted.forEach(t => {
+      if (t.transaction_type === 'income' && t.bank_account_id) {
+        map.set(t.bank_account_id, (map.get(t.bank_account_id) || 0) + t.amount);
+        txBalances.set(t.id, map.get(t.bank_account_id)!);
+      } else if (t.transaction_type === 'expense' && t.bank_account_id) {
+        const total = t.amount + (t.has_fee && t.fee_amount ? t.fee_amount : 0);
+        map.set(t.bank_account_id, (map.get(t.bank_account_id) || 0) - total);
+        txBalances.set(t.id, map.get(t.bank_account_id)!);
+      } else if (t.transaction_type === 'transfer') {
+        const feeAmt = t.has_fee && t.fee_amount ? t.fee_amount : 0;
+        if (t.from_account_id) {
+          map.set(t.from_account_id, (map.get(t.from_account_id) || 0) - t.amount - feeAmt);
+        }
+        if (t.to_account_id) {
+          map.set(t.to_account_id, (map.get(t.to_account_id) || 0) + t.amount);
+        }
+        txBalances.set(t.id, map.get(t.from_account_id || t.to_account_id || '') || 0);
+      }
+    });
+    
+    return txBalances;
+  }, [filteredTransactions, bankAccounts, company]);
   const handleFilterChange = (newFilter: TransactionType | 'all') => {
     setFilterType(newFilter);
     setCurrentPage(1);
@@ -391,12 +431,13 @@ export default function TransactionsPage() {
                 <th>客戶/廠商</th>
                 <th>發票號碼</th>
                 <th className="text-right">金額</th>
+                <th className="text-right">帳戶餘額</th>
                 <th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody>
               {paginatedTransactions.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-8 text-gray-500">沒有找到符合條件的交易記錄</td></tr>
+                <tr><td colSpan={9} className="text-center py-8 text-gray-500">沒有找到符合條件的交易記錄</td></tr>
               ) : (
                 paginatedTransactions.map(t => {
                   const config = transactionTypeConfig[t.transaction_type];
@@ -417,6 +458,7 @@ export default function TransactionsPage() {
                       <td><span className="text-sm text-gray-600">{customer?.short_name || customer?.name || '-'}</span></td>
                       <td><span className="text-sm text-gray-600 font-mono">{t.tax_id || '-'}</span></td>
                       <td className="text-right"><span className={`font-semibold ${config.color}`}>{t.transaction_type === 'income' ? '+' : t.transaction_type === 'expense' ? '-' : ''}{formatCurrency(displayAmount)}</span></td>
+                      <td className="text-right"><span className="text-sm font-mono text-gray-600">{balanceMap.has(t.id) ? formatCurrency(balanceMap.get(t.id)!) : '-'}</span></td>
                       <td className="text-right">
                         {deleteConfirm === t.id ? (
                           <div className="flex items-center justify-end gap-1">
