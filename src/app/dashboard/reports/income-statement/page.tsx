@@ -4,10 +4,9 @@ import { useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useDataStore } from '@/stores/dataStore';
 import { useAuthStore } from '@/stores/authStore';
-import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear } from 'date-fns';
 import { zhTW } from 'date-fns/locale';
-import { TrendingUp, TrendingDown, Download, Printer } from 'lucide-react';
-import { defaultAccountCategories } from '@/data/accounts';
+import { TrendingUp, TrendingDown, Download, Printer, DollarSign } from 'lucide-react';
 
 interface IncomeItem {
   code: string;
@@ -21,11 +20,10 @@ interface IncomeItem {
 export default function IncomeStatementPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const url_start = searchParams.get('start') || format(startOfMonth(new Date()), 'yyyy-MM-dd');
   const url_end = searchParams.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
 
-  // 更新 URL 參數
   const updateURL = (startDate: string, endDate: string) => {
     const params = new URLSearchParams();
     if (startDate) params.set('start', startDate);
@@ -33,207 +31,181 @@ export default function IncomeStatementPage() {
     router.replace(`/dashboard/reports/income-statement?${params.toString()}`, { scroll: false });
   };
 
-  const { vouchers, voucherItems } = useDataStore();
+  const { transactions, accountCategories } = useDataStore();
   const { company } = useAuthStore();
   const [startDate, setStartDate] = useState(url_start);
   const [endDate, setEndDate] = useState(url_end);
 
-  // 計算損益表
-  const incomeStatement = useMemo(() => {
-    // 計算各科目金額
-    const accountAmounts: Map<string, number> = new Map();
+  // 快速期間選擇
+  const setPeriod = (type: string) => {
+    const now = new Date();
+    let s = '', e = '';
+    switch (type) {
+      case 'thisMonth':
+        s = format(startOfMonth(now), 'yyyy-MM-dd');
+        e = format(endOfMonth(now), 'yyyy-MM-dd');
+        break;
+      case 'lastMonth':
+        s = format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd');
+        e = format(endOfMonth(subMonths(now, 1)), 'yyyy-MM-dd');
+        break;
+      case 'last3':
+        s = format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd');
+        e = format(endOfMonth(now), 'yyyy-MM-dd');
+        break;
+      case 'last6':
+        s = format(startOfMonth(subMonths(now, 5)), 'yyyy-MM-dd');
+        e = format(endOfMonth(now), 'yyyy-MM-dd');
+        break;
+      case 'thisYear':
+        s = format(startOfYear(now), 'yyyy-MM-dd');
+        e = format(endOfYear(now), 'yyyy-MM-dd');
+        break;
+    }
+    setStartDate(s);
+    setEndDate(e);
+    updateURL(s, e);
+  };
 
-    // 取得期間內已核准的憑證
-    const approvedVouchers = vouchers.filter(
-      v => v.company_id === company?.id && 
-           v.status === 'approved' && 
-           new Date(v.voucher_date) >= new Date(startDate) &&
-           new Date(v.voucher_date) <= new Date(endDate)
-    );
+  // 計算損益表（從交易記錄）
+  const incomeStatement = useMemo(() => {
+    // 建立科目對照表（category_id → code/name）
+    const categoryMap = new Map<string, { code: string; name: string; type: string }>();
+    accountCategories
+      .filter(c => c.company_id === company?.id)
+      .forEach(c => categoryMap.set(c.id, { code: c.code, name: c.name, type: c.type }));
+
+    // 篩選期間內的交易（排除轉帳）
+    const filtered = transactions.filter(t => {
+      if (t.company_id !== company?.id) return false;
+      if (t.transaction_type === 'transfer') return false;
+      const d = new Date(t.transaction_date);
+      return d >= new Date(startDate) && d <= new Date(endDate);
+    });
 
     // 累計各科目金額
-    approvedVouchers.forEach(voucher => {
-      const items = voucherItems.filter(item => item.voucher_id === voucher.id);
-      items.forEach(item => {
-        const accountId = item.account_id;
-        if (!accountId) return;
-        const account = defaultAccountCategories.find(a => a.code === accountId);
-        if (!account) return;
+    const codeAmounts = new Map<string, { name: string; amount: number }>();
+    let uncategorizedIncome = 0;
+    let uncategorizedExpense = 0;
+    let totalFees = 0;
 
-        // 只處理收入、成本、費用類科目
-        if (!['revenue', 'cost', 'expense'].includes(account.type)) return;
+    filtered.forEach(t => {
+      const cat = t.category_id ? categoryMap.get(t.category_id) : null;
 
-        const currentAmount = accountAmounts.get(accountId) || 0;
-        
-        // 收入類：貸方增加
-        // 成本/費用類：借方增加
-        if (account.type === 'revenue') {
-          accountAmounts.set(accountId, currentAmount + item.credit_amount - item.debit_amount);
-        } else {
-          accountAmounts.set(accountId, currentAmount + item.debit_amount - item.credit_amount);
-        }
-      });
+      if (cat) {
+        const cur = codeAmounts.get(cat.code) || { name: cat.name, amount: 0 };
+        cur.amount += t.amount;
+        codeAmounts.set(cat.code, cur);
+      } else {
+        if (t.transaction_type === 'income') uncategorizedIncome += t.amount;
+        else if (t.transaction_type === 'expense') uncategorizedExpense += t.amount;
+      }
+
+      // 手續費另計
+      if (t.has_fee && t.fee_amount > 0) {
+        totalFees += t.fee_amount;
+      }
     });
 
     // 建立損益表項目
     const items: IncomeItem[] = [];
 
-    // 營業收入 (41xx)
+    // ── 營業收入 (41xx) ──
     let operatingRevenue = 0;
     items.push({ code: '41', name: '營業收入', amount: 0, level: 0 });
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('41') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          operatingRevenue += amount;
-        }
+
+    Array.from(codeAmounts.entries())
+      .filter(([code]) => code.startsWith('41'))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([code, { name, amount }]) => {
+        items.push({ code, name, amount, level: 1 });
+        operatingRevenue += amount;
       });
+
+    if (uncategorizedIncome > 0) {
+      items.push({ code: '未分類', name: '未分類收入', amount: uncategorizedIncome, level: 1 });
+      operatingRevenue += uncategorizedIncome;
+    }
+
     items.push({ code: '41-total', name: '營業收入合計', amount: operatingRevenue, level: 0, isSubtotal: true });
 
-    // 營業成本 (51xx)
+    // ── 營業成本 (51xx) ──
     let operatingCost = 0;
     items.push({ code: '51', name: '營業成本', amount: 0, level: 0 });
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('51') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          operatingCost += amount;
-        }
+
+    Array.from(codeAmounts.entries())
+      .filter(([code]) => code.startsWith('51'))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([code, { name, amount }]) => {
+        items.push({ code, name, amount, level: 1 });
+        operatingCost += amount;
       });
+
     items.push({ code: '51-total', name: '營業成本合計', amount: operatingCost, level: 0, isSubtotal: true });
 
-    // 營業毛利
+    // ── 營業毛利 ──
     const grossProfit = operatingRevenue - operatingCost;
-    items.push({ code: 'gross-profit', name: '營業毛利', amount: grossProfit, level: 0, isTotal: true });
+    items.push({ code: 'gross', name: '營業毛利', amount: grossProfit, level: 0, isTotal: true });
 
-    // 營業費用 (61xx, 62xx)
+    // ── 營業費用 (61xx–69xx) ──
     let operatingExpenses = 0;
     items.push({ code: '6', name: '營業費用', amount: 0, level: 0 });
-    
-    // 推銷費用
-    let sellingExpenses = 0;
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('61') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          sellingExpenses += amount;
-        }
-      });
-    if (sellingExpenses > 0) {
-      items.push({ code: '61-total', name: '推銷費用小計', amount: sellingExpenses, level: 1, isSubtotal: true });
-    }
-    operatingExpenses += sellingExpenses;
 
-    // 管理費用
-    let adminExpenses = 0;
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('62') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          adminExpenses += amount;
-        }
+    Array.from(codeAmounts.entries())
+      .filter(([code]) => code.startsWith('6'))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([code, { name, amount }]) => {
+        items.push({ code, name, amount, level: 1 });
+        operatingExpenses += amount;
       });
-    if (adminExpenses > 0) {
-      items.push({ code: '62-total', name: '管理費用小計', amount: adminExpenses, level: 1, isSubtotal: true });
+
+    if (totalFees > 0) {
+      items.push({ code: '手續費', name: '銀行手續費', amount: totalFees, level: 1 });
+      operatingExpenses += totalFees;
     }
-    operatingExpenses += adminExpenses;
+
+    if (uncategorizedExpense > 0) {
+      items.push({ code: '未分類', name: '未分類支出', amount: uncategorizedExpense, level: 1 });
+      operatingExpenses += uncategorizedExpense;
+    }
 
     items.push({ code: '6-total', name: '營業費用合計', amount: operatingExpenses, level: 0, isSubtotal: true });
 
-    // 營業淨利
+    // ── 營業淨利 ──
     const operatingIncome = grossProfit - operatingExpenses;
-    items.push({ code: 'operating-income', name: '營業淨利', amount: operatingIncome, level: 0, isTotal: true });
+    items.push({ code: 'op', name: '營業淨利', amount: operatingIncome, level: 0, isTotal: true });
 
-    // 營業外收入 (42xx)
-    let nonOperatingRevenue = 0;
-    items.push({ code: '42', name: '營業外收入', amount: 0, level: 0 });
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('42') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          nonOperatingRevenue += amount;
-        }
-      });
-    items.push({ code: '42-total', name: '營業外收入合計', amount: nonOperatingRevenue, level: 0, isSubtotal: true });
-
-    // 營業外費用 (71xx)
-    let nonOperatingExpenses = 0;
-    items.push({ code: '71', name: '營業外費用', amount: 0, level: 0 });
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('71') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        if (amount !== 0) {
-          items.push({ code: account.code, name: account.name, amount, level: 1 });
-          nonOperatingExpenses += amount;
-        }
-      });
-    items.push({ code: '71-total', name: '營業外費用合計', amount: nonOperatingExpenses, level: 0, isSubtotal: true });
-
-    // 稅前淨利
-    const incomeBeforeTax = operatingIncome + nonOperatingRevenue - nonOperatingExpenses;
-    items.push({ code: 'income-before-tax', name: '稅前淨利', amount: incomeBeforeTax, level: 0, isTotal: true });
-
-    // 所得稅費用 (72xx)
-    let incomeTax = 0;
-    defaultAccountCategories
-      .filter(a => a.code.startsWith('72') && a.code.length === 4)
-      .forEach(account => {
-        const amount = accountAmounts.get(account.code) || 0;
-        incomeTax += amount;
-      });
-    if (incomeTax !== 0) {
-      items.push({ code: '72', name: '所得稅費用', amount: incomeTax, level: 0 });
-    }
-
-    // 本期淨利
-    const netIncome = incomeBeforeTax - incomeTax;
-    items.push({ code: 'net-income', name: '本期淨利', amount: netIncome, level: 0, isTotal: true });
+    // ── 本期淨利 ──
+    items.push({ code: 'net', name: '本期淨利（淨損）', amount: operatingIncome, level: 0, isTotal: true });
 
     return {
-      items: items.filter(item => item.amount !== 0 || item.isTotal || item.isSubtotal || item.level === 0),
-      operatingRevenue,
-      operatingCost,
+      items,
+      totalRevenue: operatingRevenue,
+      totalCost: operatingCost,
       grossProfit,
-      operatingExpenses,
-      operatingIncome,
-      nonOperatingRevenue,
-      nonOperatingExpenses,
-      incomeBeforeTax,
-      incomeTax,
-      netIncome,
+      totalExpenses: operatingExpenses,
+      netIncome: operatingIncome,
+      txCount: filtered.length,
     };
-  }, [vouchers, voucherItems, company, startDate, endDate]);
+  }, [transactions, accountCategories, company, startDate, endDate]);
 
   const formatCurrency = (amount: number) => {
-    const absAmount = Math.abs(amount);
-    const formatted = new Intl.NumberFormat('zh-TW', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(absAmount);
+    const abs = Math.abs(amount);
+    const formatted = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(abs);
     return amount < 0 ? `(${formatted})` : formatted;
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
   const handleExport = () => {
-    const headers = ['項目', '金額'];
-    const rows = incomeStatement.items.map(item => [
-      item.name,
-      formatCurrency(item.amount),
-    ]);
+    const headers = ['科目代碼', '科目名稱', '金額'];
+    const rows = incomeStatement.items
+      .filter(item => item.level > 0 || item.isSubtotal || item.isTotal)
+      .map(item => [
+        item.code,
+        (item.level === 1 ? '  ' : '') + item.name,
+        formatCurrency(item.amount),
+      ]);
 
     const csvContent = [headers, ...rows]
       .map(row => row.map(cell => `"${cell}"`).join(','))
@@ -246,23 +218,9 @@ export default function IncomeStatementPage() {
     link.click();
   };
 
-  const setDateRange = (type: 'month' | 'quarter' | 'year') => {
-    const now = new Date();
-    switch (type) {
-      case 'month':
-        { const s1 = format(startOfMonth(now), 'yyyy-MM-dd'); const e1 = format(endOfMonth(now), 'yyyy-MM-dd'); setStartDate(s1); setEndDate(e1); updateURL(s1, e1); }
-        break;
-      case 'quarter':
-        const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
-        const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
-        const quarterEnd = new Date(now.getFullYear(), quarterMonth + 3, 0);
-        { const s2 = format(quarterStart, 'yyyy-MM-dd'); const e2 = format(quarterEnd, 'yyyy-MM-dd'); setStartDate(s2); setEndDate(e2); updateURL(s2, e2); }
-        break;
-      case 'year':
-        { const s3 = format(startOfYear(now), 'yyyy-MM-dd'); const e3 = format(endOfYear(now), 'yyyy-MM-dd'); setStartDate(s3); setEndDate(e3); updateURL(s3, e3); }
-        break;
-    }
-  };
+  const profitRate = incomeStatement.totalRevenue > 0
+    ? ((incomeStatement.netIncome / incomeStatement.totalRevenue) * 100).toFixed(1)
+    : '0';
 
   return (
     <div className="space-y-6">
@@ -270,7 +228,7 @@ export default function IncomeStatementPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">損益表</h1>
-          <p className="text-sm text-gray-500 mt-1">顯示公司在特定期間的經營成果</p>
+          <p className="text-sm text-gray-500 mt-1">依交易記錄彙總收入與支出</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExport} className="btn-secondary flex items-center gap-2">
@@ -284,89 +242,66 @@ export default function IncomeStatementPage() {
         </div>
       </div>
 
-      {/* 篩選區 */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <div className="flex flex-col md:flex-row gap-4 items-end">
-          <div>
-            <label className="input-label">開始日期</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); updateURL(e.target.value, endDate); }}
-              className="input-field"
-            />
+      {/* 摘要卡片 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex items-center gap-2 text-green-600 mb-1">
+            <TrendingUp className="w-4 h-4" />
+            <span className="text-sm font-medium">總收入</span>
           </div>
-          <div>
-            <label className="input-label">結束日期</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); updateURL(startDate, e.target.value); }}
-              className="input-field"
-            />
+          <p className="text-2xl font-bold text-green-700">${formatCurrency(incomeStatement.totalRevenue)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex items-center gap-2 text-red-600 mb-1">
+            <TrendingDown className="w-4 h-4" />
+            <span className="text-sm font-medium">總成本</span>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setDateRange('month')} className="btn-secondary text-sm">
-              本月
-            </button>
-            <button onClick={() => setDateRange('quarter')} className="btn-secondary text-sm">
-              本季
-            </button>
-            <button onClick={() => setDateRange('year')} className="btn-secondary text-sm">
-              本年度
-            </button>
+          <p className="text-2xl font-bold text-red-700">${formatCurrency(incomeStatement.totalCost)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex items-center gap-2 text-orange-600 mb-1">
+            <TrendingDown className="w-4 h-4" />
+            <span className="text-sm font-medium">總費用</span>
           </div>
+          <p className="text-2xl font-bold text-orange-700">${formatCurrency(incomeStatement.totalExpenses)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <div className="flex items-center gap-2 text-blue-600 mb-1">
+            <DollarSign className="w-4 h-4" />
+            <span className="text-sm font-medium">淨利（利潤率 {profitRate}%）</span>
+          </div>
+          <p className={`text-2xl font-bold ${incomeStatement.netIncome >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
+            {incomeStatement.netIncome >= 0 ? '+' : ''}${formatCurrency(incomeStatement.netIncome)}
+          </p>
         </div>
       </div>
 
-      {/* 摘要卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="stats-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">營業收入</p>
-              <p className="text-xl font-bold text-green-600">
-                {formatCurrency(incomeStatement.operatingRevenue)}
-              </p>
-            </div>
-            <TrendingUp className="w-8 h-8 text-green-400" />
+      {/* 篩選區 */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-4 items-end">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: '本月', key: 'thisMonth' },
+              { label: '上月', key: 'lastMonth' },
+              { label: '近3個月', key: 'last3' },
+              { label: '近6個月', key: 'last6' },
+              { label: '今年', key: 'thisYear' },
+            ].map(p => (
+              <button key={p.key} onClick={() => setPeriod(p.key)}
+                className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50">{p.label}</button>
+            ))}
           </div>
-        </div>
-        <div className="stats-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">營業成本</p>
-              <p className="text-xl font-bold text-orange-600">
-                {formatCurrency(incomeStatement.operatingCost)}
-              </p>
-            </div>
-            <TrendingDown className="w-8 h-8 text-orange-400" />
+          <div>
+            <label className="input-label">開始日期</label>
+            <input type="date" value={startDate}
+              onChange={e => { setStartDate(e.target.value); updateURL(e.target.value, endDate); }}
+              className="input-field" />
           </div>
-        </div>
-        <div className="stats-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">營業費用</p>
-              <p className="text-xl font-bold text-red-600">
-                {formatCurrency(incomeStatement.operatingExpenses)}
-              </p>
-            </div>
-            <TrendingDown className="w-8 h-8 text-red-400" />
-          </div>
-        </div>
-        <div className="stats-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">本期淨利</p>
-              <p className={`text-xl font-bold ${incomeStatement.netIncome >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {formatCurrency(incomeStatement.netIncome)}
-              </p>
-            </div>
-            {incomeStatement.netIncome >= 0 ? (
-              <TrendingUp className="w-8 h-8 text-blue-400" />
-            ) : (
-              <TrendingDown className="w-8 h-8 text-red-400" />
-            )}
+          <div>
+            <label className="input-label">結束日期</label>
+            <input type="date" value={endDate}
+              onChange={e => { setEndDate(e.target.value); updateURL(startDate, e.target.value); }}
+              className="input-field" />
           </div>
         </div>
       </div>
@@ -377,86 +312,71 @@ export default function IncomeStatementPage() {
           <h2 className="text-xl font-bold">{company?.name}</h2>
           <h3 className="text-lg font-semibold mt-1">損 益 表</h3>
           <p className="text-sm text-gray-600 mt-1">
-            期間：{format(new Date(startDate), 'yyyy年MM月dd日', { locale: zhTW })} 至 {format(new Date(endDate), 'yyyy年MM月dd日', { locale: zhTW })}
+            期間：{format(new Date(startDate), 'yyyy年MM月dd日', { locale: zhTW })} 至{' '}
+            {format(new Date(endDate), 'yyyy年MM月dd日', { locale: zhTW })}
           </p>
           <p className="text-xs text-gray-500 mt-1">單位：新台幣元</p>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b-2 border-gray-300">
-                <th className="py-3 px-4 text-left">項目</th>
-                <th className="py-3 px-4 text-right w-40">金額</th>
-              </tr>
-            </thead>
-            <tbody>
-              {incomeStatement.items.map((item, index) => (
-                <tr 
-                  key={item.code}
-                  className={`
-                    border-b border-gray-100
-                    ${item.isTotal ? 'font-bold bg-blue-50 text-blue-900' : ''}
-                    ${item.isSubtotal ? 'font-semibold bg-gray-50' : ''}
-                    ${item.level === 0 && !item.isTotal && !item.isSubtotal ? 'font-medium bg-gray-50' : ''}
-                    ${item.code === 'net-income' ? 'text-lg bg-green-100 text-green-900' : ''}
-                  `}
-                >
-                  <td className={`py-2 px-4 ${item.level === 1 ? 'pl-8' : ''}`}>
-                    {item.name}
-                  </td>
-                  <td className={`py-2 px-4 text-right font-mono ${
-                    item.amount < 0 ? 'text-red-600' : ''
-                  }`}>
-                    {item.amount !== 0 || item.isTotal || item.isSubtotal ? formatCurrency(item.amount) : ''}
-                  </td>
+        {incomeStatement.txCount === 0 ? (
+          <div className="text-center py-12">
+            <TrendingUp className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">此期間無交易記錄</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b-2 border-gray-300">
+                  <th className="py-3 px-6 text-left w-24">科目代碼</th>
+                  <th className="py-3 px-6 text-left">科目名稱</th>
+                  <th className="py-3 px-6 text-right w-36">金額</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 毛利率與淨利率 */}
-        {incomeStatement.operatingRevenue > 0 && (
-          <div className="p-4 bg-gray-50 border-t border-gray-200">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">毛利率：</span>
-                <span className="font-semibold">
-                  {((incomeStatement.grossProfit / incomeStatement.operatingRevenue) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">營業利益率：</span>
-                <span className="font-semibold">
-                  {((incomeStatement.operatingIncome / incomeStatement.operatingRevenue) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">稅前淨利率：</span>
-                <span className="font-semibold">
-                  {((incomeStatement.incomeBeforeTax / incomeStatement.operatingRevenue) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">淨利率：</span>
-                <span className="font-semibold">
-                  {((incomeStatement.netIncome / incomeStatement.operatingRevenue) * 100).toFixed(1)}%
-                </span>
-              </div>
-            </div>
+              </thead>
+              <tbody>
+                {incomeStatement.items.map((item, i) => {
+                  if (item.isTotal) {
+                    return (
+                      <tr key={i} className="bg-blue-50 font-bold border-t-2 border-b-2 border-gray-300">
+                        <td className="py-3 px-6"></td>
+                        <td className="py-3 px-6">{item.name}</td>
+                        <td className={`py-3 px-6 text-right font-mono ${item.amount < 0 ? 'text-red-600' : ''}`}>
+                          {formatCurrency(item.amount)}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  if (item.isSubtotal) {
+                    return (
+                      <tr key={i} className="bg-gray-100 font-semibold border-t border-gray-300">
+                        <td className="py-2 px-6"></td>
+                        <td className="py-2 px-6">{item.name}</td>
+                        <td className="py-2 px-6 text-right font-mono">{formatCurrency(item.amount)}</td>
+                      </tr>
+                    );
+                  }
+                  if (item.level === 0 && item.amount === 0 && !item.isTotal && !item.isSubtotal) {
+                    return (
+                      <tr key={i} className="border-t border-gray-200">
+                        <td className="pt-4 pb-1 px-6 font-semibold text-gray-700" colSpan={3}>{item.name}</td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-6 font-mono text-gray-500 pl-10">{item.code}</td>
+                      <td className="py-2 px-6 pl-10">{item.name}</td>
+                      <td className="py-2 px-6 text-right font-mono">{formatCurrency(item.amount)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {/* 報表資訊 */}
         <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between text-xs text-gray-500 print:bg-white">
-          <span>
-            {incomeStatement.netIncome >= 0 ? (
-              <span className="text-green-600">本期獲利 {formatCurrency(incomeStatement.netIncome)}</span>
-            ) : (
-              <span className="text-red-600">本期虧損 {formatCurrency(Math.abs(incomeStatement.netIncome))}</span>
-            )}
-          </span>
+          <span>共 {incomeStatement.txCount} 筆交易</span>
           <span>製表日期：{format(new Date(), 'yyyy/MM/dd HH:mm')}</span>
         </div>
       </div>
