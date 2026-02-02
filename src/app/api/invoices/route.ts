@@ -292,7 +292,21 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', billing_request_id);
     }
-
+    // 自動回寫發票號碼到交易記錄
+    if (billing_request_id && invoiceNumber) {
+      const { data: billingData } = await supabase
+        .from('acct_billing_requests')
+        .select('transaction_id')
+        .eq('id', billing_request_id)
+        .single();
+      
+      if (billingData?.transaction_id) {
+        await supabase
+          .from('acct_transactions')
+          .update({ tax_id: invoiceNumber })
+          .eq('id', billingData.transaction_id);
+      }
+    }
     // 開票成功後發送 LINE 群組通知
     if (status === 'issued') {
       try {
