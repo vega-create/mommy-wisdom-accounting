@@ -6,7 +6,7 @@ import { issueInvoice, invalidInvoice, EzPayConfig, InvoiceItem } from '@/lib/ez
 
 
 // 取得公司的 ezPay 設定
-async function getEzPayConfig(companyId: string): Promise<EzPayConfig | null> {
+async function getEzPayConfig(supabase: any, companyId: string): Promise<EzPayConfig | null> {
   const { data, error } = await supabase
     .from('acct_invoice_settings')
     .select('*')
@@ -27,7 +27,7 @@ async function getEzPayConfig(companyId: string): Promise<EzPayConfig | null> {
 }
 
 // 產生發票單號
-async function generateInvoiceNumber(companyId: string): Promise<string> {
+async function generateInvoiceNumber(supabase: any, companyId: string): Promise<string> {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
   const prefix = `INV${year}${month}`;
@@ -47,6 +47,7 @@ async function generateInvoiceNumber(companyId: string): Promise<string> {
 // GET - 取得發票列表
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
     const status = searchParams.get('status');
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
 // POST - 開立發票
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     console.log('Invoice POST body:', body);
 
@@ -180,7 +182,7 @@ export async function POST(request: NextRequest) {
 
     // 如果要開立 ezPay 發票
     if (issue_to_ezpay) {
-      const config = await getEzPayConfig(company_id);
+      const config = await getEzPayConfig(supabase, company_id);
       if (!config) {
         return NextResponse.json({ error: '未設定 ezPay API，請先至設定頁面設定' }, { status: 400 });
       }
@@ -345,6 +347,7 @@ ${buyer_email ? `✉️ 發票已自動寄送至 ${buyer_email}` : '⚠️ 未�
 // PUT - 作廢發票
 export async function PUT(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { id, action, void_reason } = body;
 
@@ -375,7 +378,7 @@ export async function PUT(request: NextRequest) {
 
       // 如果有 ezPay 發票號碼，呼叫作廢 API
       if (invoice.invoice_number && invoice.ezpay_trans_num) {
-        const config = await getEzPayConfig(invoice.company_id);
+        const config = await getEzPayConfig(supabase, invoice.company_id);
         if (config) {
           const result = await invalidInvoice(config, {
             invoiceNumber: invoice.invoice_number,
@@ -419,6 +422,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - 刪除草稿發票
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
