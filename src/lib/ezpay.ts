@@ -1,6 +1,6 @@
 // lib/ezpay.ts
 // ezPay 電子發票 API 串接
-// 加密方式與 /api/invoices/issue/route.ts 一致（標準 PKCS7 填充）
+// 加密方式與 /api/invoices/issue/route.ts 完全一致
 
 import crypto from 'crypto';
 
@@ -71,22 +71,8 @@ export interface InvalidInvoiceParams {
 }
 
 /**
- * 模擬 PHP http_build_query
- * URL 編碼所有值
- */
-function httpBuildQuery(params: Record<string, string | number>): string {
-  return Object.entries(params)
-    .map(([key, value]) => {
-      const encoded = encodeURIComponent(String(value))
-        .replace(/%20/g, '+');
-      return `${key}=${encoded}`;
-    })
-    .join('&');
-}
-
-/**
- * AES-256-CBC 加密（標準 PKCS7 填充）
- * 與 /api/invoices/issue/route.ts 一致
+ * AES-256-CBC 加密
+ * 與 /api/invoices/issue/route.ts 完全一致
  */
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
@@ -96,7 +82,7 @@ function aesEncrypt(data: string, key: string, iv: string): string {
 }
 
 /**
- * AES-256-CBC 解密（標準 PKCS7 填充）
+ * AES-256-CBC 解密
  */
 function aesDecrypt(data: string, key: string, iv: string): string {
   const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
@@ -161,8 +147,10 @@ export async function issueInvoice(
     Comment: params.comment || '',
   };
 
-  // 使用 http_build_query 風格組建字串
-  const postDataString = httpBuildQuery(postData);
+  // 與成功的 issue/route.ts 完全一致：不做 URL 編碼
+  const queryString = Object.entries(postData)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
 
   console.log('=== ezPay 開立發票 ===');
   console.log('環境:', config.isProduction ? '正式' : '測試');
@@ -170,10 +158,10 @@ export async function issueInvoice(
   console.log('商店代號:', config.merchantId);
   console.log('HashKey 長度:', config.hashKey.length);
   console.log('HashIV 長度:', config.hashIV.length);
-  console.log('PostData (前200字):', postDataString.substring(0, 200));
+  console.log('PostData (前200字):', queryString.substring(0, 200));
 
   // AES 加密
-  const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
+  const encryptedData = aesEncrypt(queryString, config.hashKey, config.hashIV);
   console.log('加密後 (前100字):', encryptedData.substring(0, 100));
 
   try {
@@ -195,8 +183,13 @@ export async function issueInvoice(
 
     if (result.Status === 'SUCCESS') {
       // 解密回傳資料
-      const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
-      const invoiceData = JSON.parse(decryptedData);
+      let invoiceData;
+      try {
+        const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
+        invoiceData = JSON.parse(decryptedData);
+      } catch (e) {
+        invoiceData = typeof result.Result === 'string' ? JSON.parse(result.Result) : result.Result;
+      }
 
       return {
         success: true,
@@ -245,8 +238,10 @@ export async function invalidInvoice(
     InvalidReason: params.invalidReason,
   };
 
-  const postDataString = httpBuildQuery(postData);
-  const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
+  const queryString = Object.entries(postData)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const encryptedData = aesEncrypt(queryString, config.hashKey, config.hashIV);
 
   try {
     const formData = new URLSearchParams({
@@ -324,8 +319,10 @@ export async function searchInvoice(
     postData.EndDate = params.endDate.replace(/-/g, '/');
   }
 
-  const postDataString = httpBuildQuery(postData);
-  const encryptedData = aesEncrypt(postDataString, config.hashKey, config.hashIV);
+  const queryString = Object.entries(postData)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const encryptedData = aesEncrypt(queryString, config.hashKey, config.hashIV);
 
   try {
     const formData = new URLSearchParams({
@@ -345,8 +342,13 @@ export async function searchInvoice(
     console.log('ezPay 查詢回應:', JSON.stringify(result, null, 2));
 
     if (result.Status === 'SUCCESS') {
-      const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
-      const searchResult = JSON.parse(decryptedData);
+      let searchResult;
+      try {
+        const decryptedData = aesDecrypt(result.Result, config.hashKey, config.hashIV);
+        searchResult = JSON.parse(decryptedData);
+      } catch (e) {
+        searchResult = typeof result.Result === 'string' ? JSON.parse(result.Result) : result.Result;
+      }
 
       return {
         success: true,
