@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Mommy Wisdom 會計系統",
   description: "企業會計管理系統 - Mommy Wisdom International Co.",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({
