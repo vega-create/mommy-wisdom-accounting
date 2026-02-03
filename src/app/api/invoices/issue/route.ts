@@ -5,9 +5,18 @@ import crypto from 'crypto';
 const EZPAY_URL = 'https://inv.ezpay.com.tw/Api/invoice_issue';
 const LINE_API_URL = 'https://api.line.me/v2/bot/message/push';
 
+function addPadding(data: string): string {
+  const blockSize = 32;
+  const len = data.length;
+  const pad = blockSize - (len % blockSize);
+  return data + String.fromCharCode(pad).repeat(pad);
+}
+
 function aesEncrypt(data: string, key: string, iv: string): string {
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-  let encrypted = cipher.update(data, 'utf8', 'hex');
+  cipher.setAutoPadding(false);
+  const padded = addPadding(data);
+  let encrypted = cipher.update(padded, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return encrypted;
 }
@@ -57,8 +66,9 @@ export async function POST(request: NextRequest) {
       send_line,
     } = body;
 
+    // 統一讀 acct_invoice_settings
     const { data: settings } = await supabase
-      .from('company_ezpay_settings')
+      .from('acct_invoice_settings')
       .select('*')
       .eq('company_id', company_id)
       .single();
@@ -89,6 +99,13 @@ export async function POST(request: NextRequest) {
     const totalAmt = amt + taxAmt;
 
     const transNum = `INV${Date.now()}`;
+    const invoiceCategory = category || 'B2C';
+
+    // B2C 沒載具也沒捐贈時，強制印紙本
+    let finalPrintFlag = print_flag || 'N';
+    if (invoiceCategory === 'B2C' && !carrier_type && !love_code) {
+      finalPrintFlag = 'Y';
+    }
 
     const postData: Record<string, string> = {
       RespondType: 'JSON',
@@ -97,11 +114,11 @@ export async function POST(request: NextRequest) {
       TransNum: transNum,
       MerchantOrderNo: transNum,
       Status: '1',
-      Category: category || 'B2C',
+      Category: invoiceCategory,
       BuyerName: buyer_name,
       BuyerUBN: buyer_tax_id || '',
       BuyerEmail: buyer_email || '',
-      PrintFlag: print_flag || 'Y',
+      PrintFlag: finalPrintFlag,
       TaxType: '1',
       TaxRate: '5',
       Amt: String(amt),
@@ -124,7 +141,7 @@ export async function POST(request: NextRequest) {
     }
 
     const queryString = Object.entries(postData)
-      .map(([k, v]) => `${k}=${v}`)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&');
     const encrypted = aesEncrypt(queryString, hash_key, hash_iv);
 
@@ -149,7 +166,6 @@ export async function POST(request: NextRequest) {
         invoiceResult = typeof result.Result === 'string' ? JSON.parse(result.Result) : result.Result;
       }
 
-      // 儲存到資料庫
       const { data: invoice, error: insertError } = await supabase.from('acct_invoices').insert({
         company_id,
         customer_id: customer_id || null,
@@ -165,14 +181,13 @@ export async function POST(request: NextRequest) {
         ezpay_trans_num: transNum,
         ezpay_invoice_trans_no: invoiceResult.InvoiceTransNo,
         ezpay_random_num: invoiceResult.RandomNum,
-        invoice_type: category || 'B2C',
+        invoice_type: invoiceCategory,
       }).select().single();
 
       if (insertError) {
         console.error('Insert error:', insertError);
       }
 
-      // 發送 LINE 通知
       let lineSent = false;
       if (send_line && customer_id) {
         try {
