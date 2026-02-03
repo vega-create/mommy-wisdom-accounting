@@ -96,13 +96,13 @@ export async function GET(request: NextRequest) {
     // 查詢關聯的交易記錄
     const invoiceIds = (data || []).map(inv => inv.id);
     let transactions: any[] = [];
-    
+
     if (invoiceIds.length > 0) {
       const { data: txData } = await supabase
         .from('acct_transactions')
         .select('id, invoice_id, amount, transaction_date, description')
         .in('invoice_id', invoiceIds);
-      
+
       transactions = txData || [];
     }
 
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
       billing_request_id,
       invoice_type,        // B2B, B2C
       tax_type = 'taxable', // taxable, zero_rate, exempt
-      
+
       // 買受人資訊
       customer_id,
       buyer_name,
@@ -139,19 +139,19 @@ export async function POST(request: NextRequest) {
       buyer_email,
       buyer_phone,
       buyer_address,
-      
+
       // 載具（B2C）
       carrier_type,
       carrier_num,
       love_code,
-      
+
       // 發票內容
       items,
       comment,
-      
+
       // 是否實際開立 ezPay 發票
       issue_to_ezpay = true,
-      
+
       created_by,
     } = body;
 
@@ -162,11 +162,11 @@ export async function POST(request: NextRequest) {
     // 計算金額
     const taxTypeCode = tax_type === 'taxable' ? '1' : tax_type === 'zero_rate' ? '2' : '3';
     const taxRate = taxTypeCode === '1' ? 0.05 : 0;
-    
+
     const totalAmount = items.reduce((sum: number, item: any) => {
       return sum + (item.price * item.quantity);
     }, 0);
-    
+
     const salesAmount = Math.round(totalAmount / (1 + taxRate));
     const taxAmount = totalAmount - salesAmount;
 
@@ -215,9 +215,9 @@ export async function POST(request: NextRequest) {
       });
 
       if (!result.success) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: `ezPay 開立失敗: ${result.message}`,
-          rawResponse: result.rawResponse 
+          rawResponse: result.rawResponse
         }, { status: 400 });
       }
 
@@ -285,7 +285,7 @@ export async function POST(request: NextRequest) {
     if (billing_request_id) {
       await supabase
         .from('acct_billing_requests')
-        .update({ 
+        .update({
           invoice_id: invoice.id,
           invoice_number: invoiceNumber,
           invoice_status: status === 'issued' ? 'issued' : 'pending',
@@ -299,7 +299,7 @@ export async function POST(request: NextRequest) {
         .select('transaction_id')
         .eq('id', billing_request_id)
         .single();
-      
+
       if (billingData?.transaction_id) {
         await supabase
           .from('acct_transactions')
@@ -307,17 +307,23 @@ export async function POST(request: NextRequest) {
           .eq('id', billingData.transaction_id);
       }
     }
-    // 開票成功後發送 LINE 群組通知
-    if (status === 'issued') {
+    // 開票成功後發送 LINE 通知到客戶群組
+    if (status === 'issued' && customer_id) {
       try {
+        const { data: customer } = await supabase
+          .from('acct_customers')
+          .select('line_group_id, line_group_name')
+          .eq('id', customer_id)
+          .single();
+
         const { data: lineSettings } = await supabase
           .from('acct_line_settings')
-          .select('channel_access_token, admin_group_id')
+          .select('channel_access_token')
           .eq('company_id', company_id)
           .eq('is_active', true)
           .single();
 
-        if (lineSettings?.channel_access_token && lineSettings?.admin_group_id) {
+        if (lineSettings?.channel_access_token && customer?.line_group_id) {
           const message = `📄 發票開立通知
 
 🧾 發票號碼：${invoiceNumber}
@@ -325,7 +331,7 @@ export async function POST(request: NextRequest) {
 💰 金額：NT$ ${totalAmount.toLocaleString()}
 📧 類型：${invoice_type}
 
-${buyer_email ? `✉️ 發票已自動寄送至 ${buyer_email}` : '⚠️ 未設定 Email，請手動通知客戶'}`;
+${buyer_email ? `✉️ 發票已自動寄送至 ${buyer_email}` : ''}`;
 
           await fetch('https://api.line.me/v2/bot/message/push', {
             method: 'POST',
@@ -334,26 +340,25 @@ ${buyer_email ? `✉️ 發票已自動寄送至 ${buyer_email}` : '⚠️ 未�
               'Authorization': `Bearer ${lineSettings.channel_access_token}`,
             },
             body: JSON.stringify({
-              to: lineSettings.admin_group_id,
+              to: customer.line_group_id,
               messages: [{ type: 'text', text: message }],
             }),
           });
         }
       } catch (lineError) {
         console.error('LINE notification error:', lineError);
-        // LINE 通知失敗不影響主流程
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data: invoice,
       message: status === 'issued' ? '發票開立成功' : '發票草稿已儲存',
     });
   } catch (error) {
     console.error('Error creating invoice:', error);
-    return NextResponse.json({ 
-      error: `開立發票失敗: ${error instanceof Error ? error.message : '未知錯誤'}` 
+    return NextResponse.json({
+      error: `開立發票失敗: ${error instanceof Error ? error.message : '未知錯誤'}`
     }, { status: 500 });
   }
 }
@@ -400,9 +405,9 @@ export async function PUT(request: NextRequest) {
           });
 
           if (!result.success) {
-            return NextResponse.json({ 
+            return NextResponse.json({
               error: `ezPay 作廢失敗: ${result.message}`,
-              rawResponse: result.rawResponse 
+              rawResponse: result.rawResponse
             }, { status: 400 });
           }
         }
