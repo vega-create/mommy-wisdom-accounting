@@ -101,10 +101,9 @@ export async function POST(request: NextRequest) {
     const transNum = `INV${Date.now()}`;
     const invoiceCategory = category || 'B2C';
 
-    // B2C 沒載具也沒捐贈時，強制印紙本
-    let finalPrintFlag = print_flag || 'N';
-    if (invoiceCategory === 'B2C' && !carrier_type && !love_code) {
-      finalPrintFlag = 'Y';
+    let finalPrintFlag = print_flag || 'Y';
+    if (invoiceCategory === 'B2C' && carrier_type && carrier_num) {
+      finalPrintFlag = 'N';
     }
 
     const postData: Record<string, string> = {
