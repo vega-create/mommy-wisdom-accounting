@@ -206,9 +206,11 @@ export async function POST(request: NextRequest) {
             if (lineSettings?.channel_access_token && lineSettings?.is_active) {
               const message = `📄 電子發票通知\n\n` +
                 `發票號碼：${invoiceResult.InvoiceNumber}\n` +
-                `買受人：${buyer_name}\n` +
-                `金額：$${totalAmt.toLocaleString()}\n` +
-                `開立日期：${new Date().toLocaleDateString('zh-TW')}\n\n` +
+                `買受人：${buyer_name}${buyer_tax_id ? `\n統編：${buyer_tax_id}` : ''}\n` +
+                `金額：NT$ ${totalAmt.toLocaleString()}\n` +
+                `類型：${category || 'B2C'}\n` +
+                `開立日期：${new Date().toLocaleDateString('zh-TW')}\n` +
+                `${buyer_email ? `\n✉️ 發票已自動寄送至 ${buyer_email}` : ''}\n\n` +
                 `感謝您的支持！`;
 
               lineSent = await sendLineNotification(
