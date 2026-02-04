@@ -38,6 +38,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
     }
 
+    const supabase = await createClient();
+
     // 取得應付款項資料（包含廠商 LINE 資訊）
     const { data: payable, error: payableError } = await supabase
       .from('acct_payable_requests')
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
     let notificationSent = false;
     if (send_notification) {
       const lineRecipientId = payable.vendor?.line_group_id || payable.vendor?.line_user_id;
-      
+
       if (lineRecipientId) {
         try {
           const { data: lineSettings } = await supabase
@@ -128,7 +130,7 @@ export async function POST(request: NextRequest) {
           if (lineSettings?.channel_access_token) {
             // 根據廠商類型使用不同訊息
             let message = '';
-            
+
             if (payable.vendor_type === 'company') {
               // 公司類型：通知開發票
               message = `${payable.vendor_name} 您好：
@@ -182,9 +184,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: notificationSent 
+    return NextResponse.json({
+      success: true,
+      message: notificationSent
         ? '付款已確認，已通知廠商開立發票'
         : '付款已確認，已建立支出記錄',
       transaction_id: transaction.id,
