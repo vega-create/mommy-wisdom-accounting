@@ -133,7 +133,7 @@ export async function issueInvoice(
     CarrierType: params.carrierType || '',
     CarrierNum: params.carrierNum || '',
     LoveCode: params.loveCode || '',
-    PrintFlag: params.invoiceType === 'B2B' ? 'Y' : 'N',
+    PrintFlag: (params.invoiceType === 'B2C' && params.carrierType) ? 'N' : 'Y',
     TaxType: taxType,
     TaxRate: taxType === '1' ? 5 : 0,
     Amt: salesAmount,
