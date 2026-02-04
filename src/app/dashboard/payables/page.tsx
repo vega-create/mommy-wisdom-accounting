@@ -36,10 +36,19 @@ interface PayableRequest {
   created_at: string;
 }
 
+interface BankAccount {
+  id: string;
+  bank_name: string;
+  account_number: string;
+  account_name: string;
+  is_default: boolean;
+}
+
 export default function PayablesPage() {
   const { company } = useAuthStore();
   const [payables, setPayables] = useState<PayableRequest[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -77,6 +86,7 @@ export default function PayablesPage() {
   const [paymentForm, setPaymentForm] = useState({
     paid_amount: '',
     payment_note: '',
+    bank_account_id: '',
     send_notification: true
   });
 
@@ -85,6 +95,7 @@ export default function PayablesPage() {
     if (company?.id) {
       loadPayables();
       loadVendors();
+      loadBankAccounts();
     }
   }, [company?.id, statusFilter]);
 
@@ -117,6 +128,17 @@ export default function PayablesPage() {
       }
     } catch (error) {
       console.error('Error loading vendors:', error);
+    }
+  };
+
+  const loadBankAccounts = async () => {
+    if (!company?.id) return;
+    try {
+      const response = await fetch(`/api/payment-accounts?company_id=${company.id}`);
+      const result = await response.json();
+      if (result.data) setBankAccounts(result.data);
+    } catch (error) {
+      console.error('Error loading bank accounts:', error);
     }
   };
 
@@ -208,10 +230,12 @@ export default function PayablesPage() {
   // 開啟確認付款 Modal
   const openPaymentModal = (payable: PayableRequest) => {
     setConfirmingPayable(payable);
+    const defaultAccount = bankAccounts.find((a) => a.is_default) || bankAccounts[0];
     setPaymentForm({
       paid_amount: payable.amount.toString(),
       payment_note: '',
-      send_notification: payable.vendor_type === 'company' // 公司類型預設通知
+      bank_account_id: defaultAccount?.id || '',
+      send_notification: payable.vendor_type === 'company'
     });
     setShowPaymentModal(true);
   };
@@ -229,6 +253,7 @@ export default function PayablesPage() {
           payable_id: confirmingPayable.id,
           paid_amount: parseFloat(paymentForm.paid_amount),
           payment_note: paymentForm.payment_note,
+          bank_account_id: paymentForm.bank_account_id,
           send_notification: paymentForm.send_notification
         })
       });
@@ -665,6 +690,22 @@ export default function PayablesPage() {
                   onChange={(e) => setPaymentForm({ ...paymentForm, paid_amount: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">付款帳戶</label>
+                <select
+                  value={paymentForm.bank_account_id}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, bank_account_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
+                >
+                  <option value="">請選擇帳戶</option>
+                  {bankAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.bank_name} - {account.account_number} {account.is_default ? '(預設)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

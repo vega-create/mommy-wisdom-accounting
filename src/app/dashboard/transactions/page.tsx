@@ -132,7 +132,10 @@ export default function TransactionsPage() {
         if (dateRange.end && t.transaction_date > dateRange.end) return false;
         return true;
       })
-      .sort((a, b) => new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime());
+      .sort((a, b) => {
+        const diff = new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime();
+        return diff !== 0 ? diff : new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
   }, [transactions, searchTerm, filterType, dateRange]);
 
   const totals = useMemo(() => {
@@ -148,7 +151,7 @@ export default function TransactionsPage() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTransactions, currentPage]);
-// 計算每筆交易後的總餘額
+  // 計算每筆交易後的總餘額
   const balanceMap = useMemo(() => {
     let totalBalance = bankAccounts
       .filter(a => a.company_id === company?.id)
