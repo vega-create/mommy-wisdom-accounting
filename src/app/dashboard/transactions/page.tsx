@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -151,6 +150,7 @@ export default function TransactionsPage() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredTransactions.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTransactions, currentPage]);
+
   // 計算每筆交易後的總餘額
   const balanceMap = useMemo(() => {
     let totalBalance = bankAccounts
@@ -181,12 +181,20 @@ export default function TransactionsPage() {
 
     return txBalances;
   }, [transactions, bankAccounts, company]);
+
   const handleDateRangeChange = (preset: typeof dateRangePresets[0], periodLabel: string) => {
     const newRange = preset.getValue();
     setDateRange(newRange);
     setActivePeriod(periodLabel);
     setCurrentPage(1);
     updateURL(periodLabel, filterType, newRange.start, newRange.end);
+  };
+
+  // 修正：新增 handleFilterChange 函數
+  const handleFilterChange = (type: TransactionType | 'all') => {
+    setFilterType(type);
+    setCurrentPage(1);
+    updateURL(activePeriod, type, dateRange.start, dateRange.end);
   };
 
   const exportToCSV = () => {
