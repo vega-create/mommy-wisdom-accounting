@@ -89,6 +89,10 @@ export async function POST(request: NextRequest) {
       bank_code,
       bank_name,
       bank_account,
+      id_number,
+      home_address,
+      birth_date,
+      is_internal,
     } = body;
 
     if (!company_id || !name) {
@@ -124,6 +128,10 @@ export async function POST(request: NextRequest) {
     if (bank_code) insertData.bank_code = bank_code;
     if (bank_name) insertData.bank_name = bank_name;
     if (bank_account) insertData.bank_account = bank_account;
+    if (id_number) insertData.id_number = id_number;
+    if (home_address) insertData.home_address = home_address;
+    if (birth_date) insertData.birth_date = birth_date;
+    if (is_internal !== undefined) insertData.is_internal = is_internal;
 
     const { data, error } = await supabase
       .from('acct_customers')
@@ -149,8 +157,14 @@ export async function POST(request: NextRequest) {
           line_display_name,
           bank_code,
           bank_account,
+      id_number,
+      home_address,
+      birth_date,
+      is_internal,
           is_active: true,
           customer_id: data.id,
+          id_number,
+          home_address,
         };
 
         const { data: freelancer, error: freelancerError } = await supabase
@@ -202,6 +216,7 @@ export async function PUT(request: NextRequest) {
       'preferred_title', 'vendor_type', 'can_issue_invoice',
       'billing_contact_name', 'billing_email', 'line_notify_enabled',
       'payment_terms', 'credit_limit', 'bank_code', 'bank_name', 'bank_account',
+      'id_number', 'home_address', 'birth_date', 'is_internal',
     ];
 
     allowedFields.forEach(field => {
@@ -232,6 +247,8 @@ export async function PUT(request: NextRequest) {
       if (body.line_display_name) freelancerUpdate.line_display_name = body.line_display_name;
       if (body.bank_code) freelancerUpdate.bank_code = body.bank_code;
       if (body.bank_account) freelancerUpdate.bank_account = body.bank_account;
+      if (body.id_number) freelancerUpdate.id_number = body.id_number;
+      if (body.home_address) freelancerUpdate.home_address = body.home_address;
 
       await supabase
         .from('acct_freelancers')

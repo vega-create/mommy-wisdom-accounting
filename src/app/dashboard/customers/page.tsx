@@ -35,24 +35,26 @@ interface Customer {
   address?: string;
   notes?: string;
   is_active: boolean;
-  // Phase 2 擴充欄位
   line_user_id?: string;
   line_display_name?: string;
   line_group_id?: string;
   line_group_name?: string;
   preferred_title?: string;
   vendor_type?: 'company' | 'individual';
-  is_internal?: boolean;  // 是否內部人員
+  is_internal?: boolean;
   can_issue_invoice?: boolean;
   billing_contact_name?: string;
   billing_email?: string;
   line_notify_enabled?: boolean;
   payment_terms?: number;
   credit_limit?: number;
-  // 銀行資訊
   bank_code?: string;
   bank_name?: string;
   bank_account?: string;
+  // 新增個人欄位
+  id_number?: string;
+  home_address?: string;
+  birth_date?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -80,7 +82,6 @@ const vendorTypeLabels: Record<VendorType, string> = {
 export default function CustomersPage() {
   const { company } = useAuthStore();
 
-  // State
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -103,27 +104,39 @@ export default function CustomersPage() {
     customer_type: 'customer' as CustomerType,
     notes: '',
     is_active: true,
-    // Phase 2 擴充
     line_user_id: '',
     line_display_name: '',
     line_group_id: '',
     line_group_name: '',
     preferred_title: '',
     vendor_type: 'company' as VendorType,
-    is_internal: false,  // 是否內部人員
+    is_internal: false,
     can_issue_invoice: true,
     billing_contact_name: '',
     billing_email: '',
     line_notify_enabled: true,
     payment_terms: 30,
     credit_limit: 0,
-    // 銀行資訊
     bank_code: '',
     bank_name: '',
     bank_account: '',
+    // 新增個人欄位
+    id_number: '',
+    home_address: '',
+    birth_date: '',
   });
 
-  // 載入客戶資料
+  // 判斷是否為個人類型（外部個人或內部人員）
+  const isPersonType = (formData.customer_type === 'vendor' || formData.customer_type === 'both') && 
+    (formData.vendor_type === 'individual' || formData.is_internal);
+
+  // 判斷是否為外部公司
+  const isCompanyType = (formData.customer_type === 'vendor' || formData.customer_type === 'both') && 
+    formData.vendor_type === 'company' && !formData.is_internal;
+
+  // 純客戶類型
+  const isCustomerOnly = formData.customer_type === 'customer';
+
   useEffect(() => {
     if (company?.id) {
       loadCustomers();
@@ -213,6 +226,9 @@ export default function CustomersPage() {
         bank_code: customer.bank_code || '',
         bank_name: customer.bank_name || '',
         bank_account: customer.bank_account || '',
+        id_number: customer.id_number || '',
+        home_address: customer.home_address || '',
+        birth_date: customer.birth_date || '',
       });
     } else {
       setEditingCustomer(null);
@@ -243,6 +259,9 @@ export default function CustomersPage() {
         bank_code: '',
         bank_name: '',
         bank_account: '',
+        id_number: '',
+        home_address: '',
+        birth_date: '',
       });
     }
     setActiveTab('basic');
@@ -253,9 +272,8 @@ export default function CustomersPage() {
     e.preventDefault();
     if (!company?.id) return;
 
-    // 前端驗證 - 失敗時不關閉 Modal
     if (!formData.name.trim()) {
-      alert('請先填寫「基本資料」中的客戶名稱');
+      alert('請先填寫名稱');
       setActiveTab('basic');
       return;
     }
@@ -281,7 +299,7 @@ export default function CustomersPage() {
       if (result.success || result.data) {
         await loadCustomers();
         setShowModal(false);
-        alert(editingCustomer ? '客戶資料已更新！' : '客戶已新增！');
+        alert(editingCustomer ? '資料已更新！' : '已新增！');
       } else {
         alert(result.error || '儲存失敗');
       }
@@ -308,7 +326,6 @@ export default function CustomersPage() {
     setDeleteConfirm(null);
   };
 
-  // 統計
   const stats = {
     total: customers.length,
     customers: customers.filter(c => c.customer_type === 'customer' || c.customer_type === 'both').length,
@@ -448,12 +465,17 @@ export default function CustomersPage() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${customerTypeLabels[customer.customer_type].color}`}>
                         {customerTypeLabels[customer.customer_type].label}
                       </span>
-                      {customer.vendor_type === 'individual' && customer.customer_type !== 'customer' && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-                          個人
+                      {customer.is_internal && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                          內部人員
                         </span>
                       )}
-                      {customer.line_notify_enabled && customer.line_user_id && (
+                      {customer.vendor_type === 'individual' && !customer.is_internal && customer.customer_type !== 'customer' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                          外部個人
+                        </span>
+                      )}
+                      {customer.line_notify_enabled && (customer.line_group_id || customer.line_user_id) && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 flex items-center gap-1">
                           <MessageCircle className="w-3 h-3" /> LINE
                         </span>
@@ -469,6 +491,12 @@ export default function CustomersPage() {
                         <span className="flex items-center gap-1">
                           <FileText className="w-3.5 h-3.5" />
                           {customer.tax_id}
+                        </span>
+                      )}
+                      {customer.id_number && (
+                        <span className="flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5" />
+                          {customer.id_number.slice(0, 4)}****
                         </span>
                       )}
                       {(customer.preferred_title || customer.contact_person) && (
@@ -599,168 +627,229 @@ export default function CustomersPage() {
                     </div>
                   </div>
 
-                  {/* Vendor Type (only show for vendor) */}
+                  {/* Vendor Type (only show for vendor/both) */}
                   {(formData.customer_type === 'vendor' || formData.customer_type === 'both') && (
-                    <>
-                      <div>
-                        <label className="input-label">廠商類型</label>
-                        <div className="flex gap-2">
-                          {(['company', 'individual'] as VendorType[]).map(type => (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => setFormData({ ...formData, vendor_type: type, is_internal: false })}
-                              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.vendor_type === type && !formData.is_internal
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                            >
-                              外部{vendorTypeLabels[type]}
-                            </button>
-                          ))}
+                    <div>
+                      <label className="input-label">廠商類型</label>
+                      <div className="flex gap-2">
+                        {(['company', 'individual'] as VendorType[]).map(type => (
                           <button
+                            key={type}
                             type="button"
-                            onClick={() => setFormData({ ...formData, vendor_type: 'individual', is_internal: true })}
-                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.is_internal
-                              ? 'bg-purple-600 text-white'
+                            onClick={() => setFormData({ ...formData, vendor_type: type, is_internal: false })}
+                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.vendor_type === type && !formData.is_internal
+                              ? 'bg-blue-600 text-white'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                               }`}
                           >
-                            內部人員
+                            外部{vendorTypeLabels[type]}
                           </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, vendor_type: 'individual', is_internal: true })}
+                          className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${formData.is_internal
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                        >
+                          內部人員
+                        </button>
+                      </div>
+                      {formData.vendor_type === 'individual' && !formData.is_internal && (
+                        <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          外部個人需填寫勞報單，會記入成本
+                        </p>
+                      )}
+                      {formData.is_internal && (
+                        <p className="text-xs text-purple-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          內部人員需填寫勞報單，不計入專案成本
+                        </p>
+                      )}
+                      {formData.vendor_type === 'company' && !formData.is_internal && (
+                        <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          外部公司需填統編，付款後請對方開發票
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ===== 外部公司 / 純客戶：公司名稱 + 統編 + 聯絡人 ===== */}
+                  {(isCustomerOnly || isCompanyType) && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="input-label">公司/客戶名稱 *</label>
+                          <input
+                            type="text"
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            className="input-field"
+                            placeholder="例：台灣科技股份有限公司"
+                            required
+                          />
                         </div>
-                        {formData.vendor_type === 'individual' && !formData.is_internal && (
-                          <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            外部個人需填寫勞報單，會記入成本
-                          </p>
-                        )}
-                        {formData.is_internal && (
-                          <p className="text-xs text-purple-600 mt-1 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            內部人員需填寫勞報單，不計入專案成本
-                          </p>
-                        )}
-                        {formData.vendor_type === 'company' && !formData.is_internal && (
-                          <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            外部公司需填統編，付款後請對方開發票
-                          </p>
-                        )}
+                        <div>
+                          <label className="input-label">簡稱</label>
+                          <input
+                            type="text"
+                            value={formData.short_name}
+                            onChange={e => setFormData({ ...formData, short_name: e.target.value })}
+                            className="input-field"
+                            placeholder="例：台灣科技"
+                          />
+                        </div>
                       </div>
 
-                      {/* 銀行資訊（付款用） */}
-                      {formData.vendor_type === 'individual' && (
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <label className="input-label mb-3">銀行資訊（匯款用）</label>
-                          <div className="grid grid-cols-3 gap-3">
-                            <div>
-                              <input
-                                type="text"
-                                value={formData.bank_code}
-                                onChange={e => setFormData({ ...formData, bank_code: e.target.value })}
-                                className="input-field"
-                                placeholder="銀行代碼"
-                              />
-                            </div>
-                            <div>
-                              <input
-                                type="text"
-                                value={formData.bank_name}
-                                onChange={e => setFormData({ ...formData, bank_name: e.target.value })}
-                                className="input-field"
-                                placeholder="銀行名稱"
-                              />
-                            </div>
-                            <div>
-                              <input
-                                type="text"
-                                value={formData.bank_account}
-                                onChange={e => setFormData({ ...formData, bank_account: e.target.value })}
-                                className="input-field"
-                                placeholder="帳號"
-                              />
-                            </div>
-                          </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="input-label">統一編號</label>
+                          <input
+                            type="text"
+                            value={formData.tax_id}
+                            onChange={e => setFormData({ ...formData, tax_id: e.target.value })}
+                            className="input-field"
+                            placeholder="12345678"
+                          />
                         </div>
-                      )}
+                        <div>
+                          <label className="input-label">稱呼</label>
+                          <input
+                            type="text"
+                            value={formData.preferred_title}
+                            onChange={e => setFormData({ ...formData, preferred_title: e.target.value })}
+                            className="input-field"
+                            placeholder="例：王總、李經理"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="input-label">聯絡人</label>
+                          <input
+                            type="text"
+                            value={formData.contact_person}
+                            onChange={e => setFormData({ ...formData, contact_person: e.target.value })}
+                            className="input-field"
+                            placeholder="王小明"
+                          />
+                        </div>
+                        <div>
+                          <label className="input-label">電話</label>
+                          <input
+                            type="text"
+                            value={formData.phone}
+                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                            className="input-field"
+                            placeholder="02-1234-5678"
+                          />
+                        </div>
+                      </div>
                     </>
                   )}
 
-                  {/* Name */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="input-label">公司/客戶名稱 *</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={e => setFormData({ ...formData, name: e.target.value })}
-                        className="input-field"
-                        placeholder="例：台灣科技股份有限公司"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="input-label">簡稱</label>
-                      <input
-                        type="text"
-                        value={formData.short_name}
-                        onChange={e => setFormData({ ...formData, short_name: e.target.value })}
-                        className="input-field"
-                        placeholder="例：台灣科技"
-                      />
-                    </div>
-                  </div>
+                  {/* ===== 外部個人 / 內部人員：姓名 + 身分證 + 戶籍地址 + 出生日期 + 銀行 ===== */}
+                  {isPersonType && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="input-label">姓名 *</label>
+                          <input
+                            type="text"
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            className="input-field"
+                            placeholder="例：王小明"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="input-label">身分證字號</label>
+                          <input
+                            type="text"
+                            value={formData.id_number}
+                            onChange={e => setFormData({ ...formData, id_number: e.target.value.toUpperCase() })}
+                            className="input-field"
+                            placeholder="A123456789"
+                            maxLength={10}
+                          />
+                        </div>
+                      </div>
 
-                  {/* Tax ID & Preferred Title */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="input-label">統一編號</label>
-                      <input
-                        type="text"
-                        value={formData.tax_id}
-                        onChange={e => setFormData({ ...formData, tax_id: e.target.value })}
-                        className="input-field"
-                        placeholder="12345678"
-                      />
-                    </div>
-                    <div>
-                      <label className="input-label">稱呼</label>
-                      <input
-                        type="text"
-                        value={formData.preferred_title}
-                        onChange={e => setFormData({ ...formData, preferred_title: e.target.value })}
-                        className="input-field"
-                        placeholder="例：王總、李經理"
-                      />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="input-label">出生日期</label>
+                          <input
+                            type="date"
+                            value={formData.birth_date}
+                            onChange={e => setFormData({ ...formData, birth_date: e.target.value })}
+                            className="input-field"
+                          />
+                        </div>
+                        <div>
+                          <label className="input-label">電話</label>
+                          <input
+                            type="text"
+                            value={formData.phone}
+                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                            className="input-field"
+                            placeholder="0912-345-678"
+                          />
+                        </div>
+                      </div>
 
-                  {/* Contact & Phone */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="input-label">聯絡人</label>
-                      <input
-                        type="text"
-                        value={formData.contact_person}
-                        onChange={e => setFormData({ ...formData, contact_person: e.target.value })}
-                        className="input-field"
-                        placeholder="王小明"
-                      />
-                    </div>
-                    <div>
-                      <label className="input-label">電話</label>
-                      <input
-                        type="text"
-                        value={formData.phone}
-                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                        className="input-field"
-                        placeholder="02-1234-5678"
-                      />
-                    </div>
-                  </div>
+                      <div>
+                        <label className="input-label">戶籍地址</label>
+                        <input
+                          type="text"
+                          value={formData.home_address}
+                          onChange={e => setFormData({ ...formData, home_address: e.target.value })}
+                          className="input-field"
+                          placeholder="戶籍地址（勞報單/扣繳憑單用）"
+                        />
+                      </div>
 
-                  {/* Email & Address */}
+                      {/* 銀行資訊 */}
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <label className="input-label mb-3">銀行資訊（匯款用）</label>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <input
+                              type="text"
+                              value={formData.bank_code}
+                              onChange={e => setFormData({ ...formData, bank_code: e.target.value })}
+                              className="input-field"
+                              placeholder="銀行代碼"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={formData.bank_name}
+                              onChange={e => setFormData({ ...formData, bank_name: e.target.value })}
+                              className="input-field"
+                              placeholder="銀行名稱"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={formData.bank_account}
+                              onChange={e => setFormData({ ...formData, bank_account: e.target.value })}
+                              className="input-field"
+                              placeholder="帳號"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 共用欄位：Email、地址、備註 */}
                   <div>
                     <label className="input-label">Email</label>
                     <input
@@ -771,14 +860,16 @@ export default function CustomersPage() {
                       placeholder="contact@example.com"
                     />
                   </div>
+
+                  {/* 通訊地址（公司/客戶用）或 地址（個人已有戶籍地址，這裡改為通訊地址） */}
                   <div>
-                    <label className="input-label">地址</label>
+                    <label className="input-label">{isPersonType ? '通訊地址' : '地址'}</label>
                     <input
                       type="text"
                       value={formData.address}
                       onChange={e => setFormData({ ...formData, address: e.target.value })}
                       className="input-field"
-                      placeholder="台北市信義區信義路100號"
+                      placeholder={isPersonType ? '通訊地址（如與戶籍不同）' : '台北市信義區信義路100號'}
                     />
                   </div>
 
@@ -865,9 +956,8 @@ export default function CustomersPage() {
                     </div>
                   </div>
 
-                  {/* Vendor specific: can issue invoice */}
                   {(formData.customer_type === 'vendor' || formData.customer_type === 'both') &&
-                    formData.vendor_type === 'company' && (
+                    formData.vendor_type === 'company' && !formData.is_internal && (
                       <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                         <div>
                           <span className="text-sm font-medium text-gray-700">廠商會開發票</span>
@@ -910,7 +1000,6 @@ export default function CustomersPage() {
                     </button>
                   </div>
 
-                  {/* LINE 群組選擇 */}
                   <div className="mb-4">
                     <label className="input-label">LINE 群組（請款通知發送目標）</label>
                     <select
@@ -976,7 +1065,7 @@ export default function CustomersPage() {
               )}
             </form>
 
-            {/* Actions - Fixed at bottom */}
+            {/* Actions */}
             <div className="flex gap-3 p-4 border-t bg-gray-50">
               <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1">
                 取消
