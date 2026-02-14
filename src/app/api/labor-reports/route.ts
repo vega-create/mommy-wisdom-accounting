@@ -122,6 +122,7 @@ export async function GET(request: NextRequest) {
 
 // POST - 新增勞報單
 export async function POST(request: NextRequest) {
+  const supabase = await createClient();
   try {
     const body = await request.json();
     console.log('Received body:', body);
