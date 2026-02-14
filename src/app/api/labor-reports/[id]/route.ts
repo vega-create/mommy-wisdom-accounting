@@ -10,6 +10,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from('acct_labor_reports')
       .select('*')
@@ -34,6 +35,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     
     const updateData: Record<string, any> = {
@@ -80,6 +82,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient();
     // 檢查狀態，只有草稿可以刪除
     const { data: report } = await supabase
       .from('acct_labor_reports')

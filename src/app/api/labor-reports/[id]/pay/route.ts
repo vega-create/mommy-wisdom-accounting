@@ -10,6 +10,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient();
     const { id } = params;
     const body = await request.json();
     const { 
@@ -77,7 +78,7 @@ export async function POST(
         transaction_date: now.split('T')[0],
         amount: report.net_amount,
         description: `勞務費 - ${report.staff_name} - ${report.work_description || report.report_number}`,
-        category_id: null, // 可設定預設勞務費科目
+        category_id: null,
         bank_account_id: paid_account_id || null,
         payment_status: 'completed',
         created_by: paid_by || null,
@@ -104,9 +105,6 @@ export async function POST(
         })
         .eq('id', report.payable_id);
     }
-
-    // 6. TODO: 發送 LINE 通知給領款人
-    // await sendLineNotification(report.freelancer?.line_user_id, '款項已匯出...')
 
     return NextResponse.json({ 
       success: true,
