@@ -84,7 +84,7 @@ export default function Sidebar() {
 
   const handleLogout = () => {
     logout();
-    router.push('/login');
+    router.push('/');
   };
 
   const currentRole = userCompanies.find(uc => uc.company_id === company?.id)?.role;
