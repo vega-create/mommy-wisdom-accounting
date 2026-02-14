@@ -27,6 +27,7 @@ async function sendLineMessage(accessToken: string, to: string, text: string) {
 
 // POST - 發送簽署連結
 export async function POST(request: NextRequest) {
+  const supabase = await createClient();
   try {
     const body = await request.json();
     const { report_id } = body;

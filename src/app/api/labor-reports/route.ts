@@ -72,6 +72,7 @@ function generateSignToken(): string {
 
 // GET - 取得勞報單列表
 export async function GET(request: NextRequest) {
+  const supabase = await createClient();
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('company_id');
