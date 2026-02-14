@@ -39,6 +39,7 @@ function calculateTax(grossAmount: number, incomeTypeCode: string, isUnionMember
 
 // 產生勞報單號
 async function generateReportNumber(companyId: string): Promise<string> {
+  const supabase = await createClient();
   const year = new Date().getFullYear();
   const prefix = `LR-${year}-`;
 
