@@ -105,6 +105,28 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
+    // 自動建立專案報價記錄
+    if (data) {
+      try {
+        await supabase
+          .from('acct_project_quotes')
+          .insert({
+            company_id,
+            quote_date: new Date().toISOString().split('T')[0],
+            client_name: customer_name,
+            project_item: title,
+            vendor_name: cost_vendor_name || null,
+            cost_price: cost_amount ? parseFloat(cost_amount) : null,
+            selling_price: parseFloat(amount),
+            status: 'in_progress',
+            project_type: 'quote',
+            notes: `請款單 ${billingNumber}${description ? ' - ' + description : ''}`,
+          });
+      } catch (e) {
+        console.error('自動建立專案報價失敗:', e);
+      }
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Error creating billing request:', error);
