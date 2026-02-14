@@ -31,10 +31,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .from('acct_contracts')
     .select('*, items:acct_contract_items(*)')
     .eq('signature_token', token)
-    .gt('signature_token_expires_at', new Date().toISOString())
     .single();
 
   if (contract) {
+    // 檢查是否過期（null = 不過期）
+    if (contract.signature_token_expires_at && 
+        new Date(contract.signature_token_expires_at) < new Date()) {
+      return NextResponse.json({ error: '連結已過期' }, { status: 404 });
+    }
     const { data: company } = await supabase
       .from('acct_companies')
       .select('name, tax_id, address, phone, email, logo_url')
@@ -217,11 +221,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .from('acct_contracts')
     .select('*, customer:acct_customers(id, name, email, line_group_id, line_group_name)')
     .eq('signature_token', token)
-    .gt('signature_token_expires_at', new Date().toISOString())
     .single();
 
   if (!contract) {
-    return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
+    return NextResponse.json({ error: '連結無效' }, { status: 404 });
+  }
+
+  // 檢查是否過期（null = 不過期）
+  if (contract.signature_token_expires_at && 
+      new Date(contract.signature_token_expires_at) < new Date()) {
+    return NextResponse.json({ error: '連結已過期' }, { status: 404 });
   }
 
   const { data, error: updateError } = await supabase
