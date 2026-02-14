@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
+import { useAuthStore } from '@/stores/authStore';
 import {
   ArrowLeft,
   Copy,
@@ -17,13 +17,13 @@ import {
   Building2,
   AlertCircle,
   Download,
-  Printer,
   MessageSquare,
   ExternalLink,
+  RefreshCw,
+  Edit2,
 } from 'lucide-react';
 
-// 狀態配置
-const statusConfig = {
+const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   draft: { label: '草稿', color: 'bg-gray-100 text-gray-700', icon: Clock },
   pending: { label: '待簽名', color: 'bg-yellow-100 text-yellow-700', icon: Send },
   signed: { label: '已簽名', color: 'bg-blue-100 text-blue-700', icon: CheckCircle2 },
@@ -31,83 +31,111 @@ const statusConfig = {
   cancelled: { label: '已取消', color: 'bg-red-100 text-red-700', icon: AlertCircle },
 };
 
-// 模擬資料
-const mockLaborReport = {
-  id: '1',
-  report_number: 'LR-2026-0001',
-  company_name: '智慧媽咪國際有限公司',
-  staff_type: 'external',
-  staff_name: '王小明',
-  id_number: 'A123456789',
-  is_union_member: false,
-  income_type_code: '50',
-  income_type_name: '執行業務所得',
-  work_description: '2026年1月份SEO優化服務，包含關鍵字研究、內容優化、技術SEO調整等工作項目。',
-  service_period_start: '2026-01-01',
-  service_period_end: '2026-01-31',
-  gross_amount: 30000,
-  withholding_tax: 3000,
-  nhi_premium: 633,
-  net_amount: 26367,
-  status: 'signed',
-  sign_token: 'abc123xyz',
-  sign_url: 'https://labor-report.vercel.app/sign/abc123xyz',
-  signature_image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  signed_at: '2026-01-22T14:30:00',
-  signed_ip: '203.145.123.45',
-  billing_request_id: '1',
-  billing_request_number: 'BR-2026-0015',
-  billing_customer_name: 'ABC科技',
-  bank_code: '004',
-  bank_name: '台灣銀行',
-  bank_account: '12345678901234',
-  paid_at: null,
-  payment_reference: null,
-  created_at: '2026-01-20T09:00:00',
-  created_by_name: '陳會計',
+const incomeTypeNames: Record<string, string> = {
+  '50': '執行業務所得',
+  '9A': '稿費/講演鐘點費',
+  '9B': '稿費/講演鐘點費',
 };
 
 export default function LaborReportDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const [report, setReport] = useState(mockLaborReport);
+  const { company } = useAuthStore();
+  const [report, setReport] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
+  const [isPaying, setIsPaying] = useState(false);
 
-  // 格式化金額
+  useEffect(() => {
+    if (params.id) {
+      fetchReport();
+    }
+  }, [params.id]);
+
+  const fetchReport = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/labor-reports/${params.id}`);
+      const result = await res.json();
+      if (result.data) {
+        setReport(result.data);
+      } else {
+        setError(result.error || '找不到勞報單');
+      }
+    } catch (err) {
+      setError('載入失敗');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('zh-TW').format(amount);
   };
 
-  // 格式化日期時間
   const formatDateTime = (dateStr: string) => {
+    if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('zh-TW');
   };
 
-  // 複製簽署連結
   const copySignUrl = () => {
-    navigator.clipboard.writeText(report.sign_url);
-    alert('簽署連結已複製！');
+    if (report?.sign_url) {
+      navigator.clipboard.writeText(report.sign_url);
+      alert('簽署連結已複製！');
+    }
   };
 
-  // 發送 LINE 通知
-  const sendLineNotification = () => {
-    alert('LINE 通知已發送！');
+  const handleConfirmPayment = async () => {
+    if (!report) return;
+    setIsPaying(true);
+    try {
+      const res = await fetch(`/api/labor-reports/${report.id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_reference: paymentReference,
+          paid_by: null,
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setShowPaymentModal(false);
+        alert('付款已確認，會計傳票已自動產生！');
+        fetchReport(); // 重新載入
+      } else {
+        alert(result.error || '付款失敗');
+      }
+    } catch (err) {
+      alert('付款失敗');
+    } finally {
+      setIsPaying(false);
+    }
   };
 
-  // 確認付款
-  const handleConfirmPayment = () => {
-    setReport(prev => ({
-      ...prev,
-      status: 'paid',
-      paid_at: new Date().toISOString(),
-      payment_reference: paymentReference,
-    }));
-    setShowPaymentModal(false);
-    alert('付款已確認，會計傳票已自動產生！');
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
+      </div>
+    );
+  }
 
-  const StatusIcon = statusConfig[report.status as keyof typeof statusConfig].icon;
+  if (error || !report) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
+        <p className="text-red-600">{error || '找不到勞報單'}</p>
+        <button onClick={() => router.push('/dashboard/labor')} className="mt-4 btn-secondary">
+          返回列表
+        </button>
+      </div>
+    );
+  }
+
+  const status = statusConfig[report.status] || statusConfig.draft;
+  const StatusIcon = status.icon;
 
   return (
     <div className="space-y-6">
@@ -123,34 +151,23 @@ export default function LaborReportDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">{report.report_number}</h1>
-              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${statusConfig[report.status as keyof typeof statusConfig].color}`}>
+              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${status.color}`}>
                 <StatusIcon className="w-4 h-4" />
-                {statusConfig[report.status as keyof typeof statusConfig].label}
+                {status.label}
               </span>
             </div>
             <p className="text-sm text-gray-500 mt-1">
-              建立於 {formatDateTime(report.created_at)} · {report.created_by_name}
+              建立於 {formatDateTime(report.created_at)}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* 狀態相關操作 */}
           {report.status === 'pending' && (
             <>
-              <button
-                onClick={copySignUrl}
-                className="btn-secondary flex items-center gap-2"
-              >
+              <button onClick={copySignUrl} className="btn-secondary flex items-center gap-2">
                 <Copy className="w-4 h-4" />
                 複製連結
-              </button>
-              <button
-                onClick={sendLineNotification}
-                className="btn-primary flex items-center gap-2"
-              >
-                <MessageSquare className="w-4 h-4" />
-                發送 LINE
               </button>
             </>
           )}
@@ -165,10 +182,15 @@ export default function LaborReportDetailPage() {
             </button>
           )}
 
-          <button className="btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            下載 PDF
-          </button>
+          {(report.status === 'draft' || report.status === 'pending') && (
+            <Link
+              href={`/dashboard/labor/${report.id}/edit`}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Edit2 className="w-4 h-4" />
+              編輯
+            </Link>
+          )}
         </div>
       </div>
 
@@ -189,7 +211,7 @@ export default function LaborReportDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">身分證字號</p>
-                <p className="font-medium text-gray-900">{report.id_number}</p>
+                <p className="font-medium text-gray-900">{report.id_number || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">人員類型</p>
@@ -226,7 +248,7 @@ export default function LaborReportDetailPage() {
                 <div>
                   <p className="text-sm text-gray-500">所得類別</p>
                   <p className="font-medium text-gray-900">
-                    {report.income_type_code} - {report.income_type_name}
+                    {report.income_type_code} - {incomeTypeNames[report.income_type_code] || '其他'}
                   </p>
                 </div>
                 <div>
@@ -237,14 +259,16 @@ export default function LaborReportDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">發放公司</p>
-                  <p className="font-medium text-gray-900">{report.company_name}</p>
+                  <p className="font-medium text-gray-900">{company?.name || '-'}</p>
                 </div>
               </div>
 
-              <div>
-                <p className="text-sm text-gray-500 mb-1">工作內容說明</p>
-                <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">{report.work_description}</p>
-              </div>
+              {report.work_description && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">工作內容說明</p>
+                  <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">{report.work_description}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -258,8 +282,7 @@ export default function LaborReportDetailPage() {
 
               <div className="flex items-center justify-between p-4 bg-brand-primary-50 rounded-lg">
                 <div>
-                  <p className="font-medium text-brand-primary-700">{report.billing_request_number}</p>
-                  <p className="text-sm text-gray-600">{report.billing_customer_name}</p>
+                  <p className="font-medium text-brand-primary-700">{report.billing_request_id}</p>
                 </div>
                 <Link
                   href={`/dashboard/billing/${report.billing_request_id}`}
@@ -276,7 +299,7 @@ export default function LaborReportDetailPage() {
           )}
 
           {/* 簽署資訊 */}
-          {(report.status === 'signed' || report.status === 'paid') && (
+          {(report.status === 'signed' || report.status === 'paid') && report.signed_at && (
             <div className="brand-card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -287,52 +310,50 @@ export default function LaborReportDetailPage() {
                 <div className="space-y-3">
                   <div>
                     <p className="text-sm text-gray-500">簽署時間</p>
-                    <p className="font-medium text-gray-900">{formatDateTime(report.signed_at!)}</p>
+                    <p className="font-medium text-gray-900">{formatDateTime(report.signed_at)}</p>
                   </div>
+                  {report.signed_ip && (
+                    <div>
+                      <p className="text-sm text-gray-500">簽署 IP</p>
+                      <p className="font-medium text-gray-900">{report.signed_ip}</p>
+                    </div>
+                  )}
+                </div>
+                {report.signature_image && (
                   <div>
-                    <p className="text-sm text-gray-500">簽署 IP</p>
-                    <p className="font-medium text-gray-900">{report.signed_ip}</p>
+                    <p className="text-sm text-gray-500 mb-2">簽名圖檔</p>
+                    <div className="border rounded-lg p-4 bg-white">
+                      <img
+                        src={report.signature_image}
+                        alt="簽名"
+                        className="max-h-24 mx-auto"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-2">簽名圖檔</p>
-                  <div className="border rounded-lg p-4 bg-white">
-                    <img
-                      src={report.signature_image}
-                      alt="簽名"
-                      className="max-h-24 mx-auto"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           )}
 
           {/* 付款資訊 */}
-          {report.status === 'paid' && (
+          {report.status === 'paid' && report.paid_at && (
             <div className="brand-card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <Banknote className="w-5 h-5 text-green-600" />
                 付款資訊
               </h2>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">付款時間</p>
-                  <p className="font-medium text-gray-900">{formatDateTime(report.paid_at!)}</p>
+                  <p className="font-medium text-gray-900">{formatDateTime(report.paid_at)}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">匯款銀行</p>
-                  <p className="font-medium text-gray-900">{report.bank_code} {report.bank_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">匯款帳號</p>
-                  <p className="font-medium text-gray-900">{report.bank_account}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">匯款備註</p>
-                  <p className="font-medium text-gray-900">{report.payment_reference || '-'}</p>
-                </div>
+                {report.payment_reference && (
+                  <div>
+                    <p className="text-sm text-gray-500">匯款備註</p>
+                    <p className="font-medium text-gray-900">{report.payment_reference}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -357,7 +378,7 @@ export default function LaborReportDetailPage() {
                   <p className="text-xs text-gray-400">10%</p>
                 </div>
                 <span className="text-red-600 font-medium">
-                  -${formatAmount(report.withholding_tax)}
+                  -${formatAmount(report.withholding_tax || 0)}
                 </span>
               </div>
 
@@ -369,7 +390,7 @@ export default function LaborReportDetailPage() {
                   </p>
                 </div>
                 <span className={`font-medium ${report.is_union_member ? 'text-green-600' : 'text-orange-600'}`}>
-                  {report.is_union_member ? '免扣' : `-$${formatAmount(report.nhi_premium)}`}
+                  {report.is_union_member ? '免扣' : `-$${formatAmount(report.nhi_premium || 0)}`}
                 </span>
               </div>
 
@@ -382,26 +403,32 @@ export default function LaborReportDetailPage() {
             </div>
 
             {/* 匯款資訊 */}
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">匯款帳戶</h3>
-              <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">銀行</span>
-                  <span className="text-gray-900">{report.bank_code} {report.bank_name}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">帳號</span>
-                  <span className="text-gray-900 font-mono">{report.bank_account}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">戶名</span>
-                  <span className="text-gray-900">{report.staff_name}</span>
+            {(report.bank_code || report.bank_account) && (
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">匯款帳戶</h3>
+                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                  {report.bank_code && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">銀行</span>
+                      <span className="text-gray-900">{report.bank_code}</span>
+                    </div>
+                  )}
+                  {report.bank_account && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">帳號</span>
+                      <span className="text-gray-900 font-mono">{report.bank_account}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">戶名</span>
+                    <span className="text-gray-900">{report.staff_name}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* 簽署連結（待簽名狀態顯示） */}
-            {report.status === 'pending' && (
+            {/* 簽署連結 */}
+            {report.status === 'pending' && report.sign_url && (
               <div className="mt-6 pt-6 border-t border-gray-100">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">簽署連結</h3>
                 <div className="flex gap-2">
@@ -411,10 +438,7 @@ export default function LaborReportDetailPage() {
                     readOnly
                     className="input-field text-xs flex-1"
                   />
-                  <button
-                    onClick={copySignUrl}
-                    className="btn-secondary px-3"
-                  >
+                  <button onClick={copySignUrl} className="btn-secondary px-3">
                     <Copy className="w-4 h-4" />
                   </button>
                 </div>
@@ -455,7 +479,7 @@ export default function LaborReportDetailPage() {
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-yellow-700">
-                    確認付款後，系統將自動產生會計傳票並發送 LINE 通知給 {report.staff_name}
+                    確認付款後，系統將自動產生會計傳票
                   </p>
                 </div>
               </div>
@@ -470,8 +494,10 @@ export default function LaborReportDetailPage() {
               </button>
               <button
                 onClick={handleConfirmPayment}
-                className="btn-primary flex-1"
+                disabled={isPaying}
+                className="btn-primary flex-1 flex items-center justify-center gap-2"
               >
+                {isPaying && <RefreshCw className="w-4 h-4 animate-spin" />}
                 確認付款
               </button>
             </div>
