@@ -21,9 +21,9 @@ export default async function QuoteViewPage({ params }: { params: Promise<{ toke
       <div className="max-w-3xl mx-auto px-4">
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+          <div className="bg-gradient-to-r from-[#A31621] to-[#BF1730] text-white p-6">
             <h1 className="text-2xl font-bold">報價單</h1>
-            <p className="text-blue-100 mt-1">{quotation.quotation_number}</p>
+            <p className="text-red-200 mt-1">{quotation.quotation_number}</p>
           </div>
 
           {isExpired && (
@@ -97,7 +97,7 @@ export default async function QuoteViewPage({ params }: { params: Promise<{ toke
               </div>
               <div className="flex justify-between text-xl font-bold">
                 <span>總計</span>
-                <span className="text-blue-600">${quotation.total_amount?.toLocaleString()}</span>
+                <span className="text-[#A31621]">${quotation.total_amount?.toLocaleString()}</span>
               </div>
             </div>
 
