@@ -22,36 +22,109 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { token } = await params;
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  // 1. 先查合約
+  const { data: contract } = await supabase
     .from('acct_contracts')
     .select('*, items:acct_contract_items(*)')
     .eq('signature_token', token)
     .gt('signature_token_expires_at', new Date().toISOString())
     .single();
 
-  if (error || !data) {
-    return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
+  if (contract) {
+    const { data: company } = await supabase
+      .from('acct_companies')
+      .select('name, tax_id, address, phone, email, logo_url')
+      .eq('id', contract.company_id)
+      .single();
+
+    return NextResponse.json({ type: 'contract', ...contract, company });
   }
 
-  // 取得公司資訊
-  const { data: company } = await supabase
-    .from('acct_companies')
-    .select('name, tax_id, address, phone, email, logo_url')
-    .eq('id', data.company_id)
+  // 2. 再查勞報單
+  const { data: labor } = await supabase
+    .from('acct_labor_reports')
+    .select('*')
+    .eq('sign_token', token)
+    .in('status', ['pending', 'signed'])
     .single();
 
-  return NextResponse.json({ ...data, company });
+  if (labor) {
+    const { data: company } = await supabase
+      .from('acct_companies')
+      .select('name, tax_id')
+      .eq('id', labor.company_id)
+      .single();
+
+    return NextResponse.json({ type: 'labor', ...labor, company });
+  }
+
+  return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const supabase = await createClient();
   const body = await request.json();
-  const { signature, signer_name } = body;
+  const { signature, signer_name, company_stamp, type } = body;
 
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
 
-  // 先取得合約資料，包含客戶資訊
+  // ===== 勞報單簽署 =====
+  if (type === 'labor') {
+    const { data: labor } = await supabase
+      .from('acct_labor_reports')
+      .select('*')
+      .eq('sign_token', token)
+      .eq('status', 'pending')
+      .single();
+
+    if (!labor) {
+      return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
+    }
+
+    const { error } = await supabase
+      .from('acct_labor_reports')
+      .update({
+        status: 'signed',
+        signature_image: signature,
+        signed_at: new Date().toISOString(),
+        signed_ip: ip,
+      })
+      .eq('sign_token', token);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // 發送 LINE 通知
+    try {
+      const { data: lineSettings } = await supabase
+        .from('acct_line_settings')
+        .select('channel_access_token, is_active, admin_group_id')
+        .eq('company_id', labor.company_id)
+        .single();
+
+      if (lineSettings?.channel_access_token && lineSettings?.is_active && lineSettings?.admin_group_id) {
+        const message = `✅ 勞報單簽署完成\n\n` +
+          `單號：${labor.report_number}\n` +
+          `人員：${labor.staff_name}\n` +
+          `金額：$${labor.net_amount?.toLocaleString()}\n` +
+          `簽署人：${signer_name}`;
+
+        await sendLineNotification(
+          lineSettings.channel_access_token,
+          lineSettings.admin_group_id,
+          message
+        );
+      }
+    } catch (e) {
+      console.error('LINE notification error:', e);
+    }
+
+    return NextResponse.json({ success: true });
+  }
+
+  // ===== 合約簽署（原本邏輯） =====
   const { data: contract } = await supabase
     .from('acct_contracts')
     .select('*, customer:acct_customers(id, name, email, line_group_id, line_group_name)')
@@ -63,7 +136,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: '連結無效或已過期' }, { status: 404 });
   }
 
-  // 更新合約狀態
   const { data, error } = await supabase
     .from('acct_contracts')
     .update({
@@ -78,23 +150,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .single();
 
   if (error) {
-    console.error('Sign error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 自動建立請款單（應收帳款）
+  // 自動建立請款單
   let billingId = null;
   try {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (contract.payment_due_days || 30));
 
-    // 產生請款單號
     const { data: numberData } = await supabase
       .rpc('generate_billing_number', { p_company_id: contract.company_id });
     
     const billing_number = numberData || `BIL${Date.now()}`;
-
-    // 從客戶資料取得 LINE 群組資訊
     const customer = contract.customer;
 
     const billingData = {
@@ -120,17 +188,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .select()
       .single();
 
-    if (billingError) {
-      console.error('建立請款單失敗:', billingError);
-    } else {
+    if (!billingError) {
       billingId = billing?.id;
-      console.log('請款單建立成功:', billingId);
     }
   } catch (e) {
     console.error('建立請款單異常:', e);
   }
 
-  // 發送 LINE 通知給管理群組
+  // 發送 LINE 通知
   try {
     const { data: lineSettings } = await supabase
       .from('acct_line_settings')

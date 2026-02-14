@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 
-export default function ContractSignPage() {
+export default function SignPage() {
   const params = useParams();
   const token = params.token as string;
-  const [contract, setContract] = useState<any>(null);
+  const [data, setData] = useState<any>(null);
+  const [docType, setDocType] = useState<'contract' | 'labor' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [signed, setSigned] = useState(false);
@@ -18,21 +19,24 @@ export default function ContractSignPage() {
   const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
-    fetchContract();
+    fetchData();
   }, [token]);
 
-  const fetchContract = async () => {
+  const fetchData = async () => {
     try {
       const res = await fetch(`/api/sign/${token}`);
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      const result = await res.json();
+      if (result.error) {
+        setError(result.error);
       } else {
-        setContract(data);
-        if (data.status === 'signed') setSigned(true);
+        setData(result);
+        setDocType(result.type || 'contract');
+        if (result.type === 'labor' && result.status === 'signed') setSigned(true);
+        if (result.type === 'contract' && result.status === 'signed') setSigned(true);
+        if (!result.type && result.status === 'signed') setSigned(true);
       }
     } catch (e) {
-      setError('無法載入合約');
+      setError('無法載入資料');
     }
     setLoading(false);
   };
@@ -49,9 +53,7 @@ export default function ContractSignPage() {
     ctx.lineCap = 'round';
   };
 
-  useEffect(() => {
-    initCanvas();
-  }, [contract]);
+  useEffect(() => { initCanvas(); }, [data]);
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDrawing(true);
@@ -85,10 +87,7 @@ export default function ContractSignPage() {
     if (canvas) setSignatureDataUrl(canvas.toDataURL());
   };
 
-  const clearSignature = () => {
-    initCanvas();
-    setSignatureDataUrl('');
-  };
+  const clearSignature = () => { initCanvas(); setSignatureDataUrl(''); };
 
   const handleStampUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -106,19 +105,219 @@ export default function ContractSignPage() {
     const res = await fetch(`/api/sign/${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signature: signatureDataUrl, signer_name: signerName, company_stamp: stampFile }),
+      body: JSON.stringify({
+        signature: signatureDataUrl,
+        signer_name: signerName,
+        company_stamp: stampFile,
+        type: docType,
+      }),
     });
-    const data = await res.json();
+    const result = await res.json();
     setSigning(false);
-    if (data.success) setSigned(true);
-    else alert(data.error || '簽署失敗');
+    if (result.success) setSigned(true);
+    else alert(result.error || '簽署失敗');
   };
 
   const handlePrint = () => window.print();
 
+  const formatAmount = (n: number) => n?.toLocaleString() || '0';
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">載入中...</div>;
   if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
-  if (!contract) return <div className="min-h-screen flex items-center justify-center text-red-600">無法載入合約</div>;
+  if (!data) return <div className="min-h-screen flex items-center justify-center text-red-600">無法載入資料</div>;
+
+  // ===== 勞報單簽署頁面 =====
+  if (docType === 'labor') {
+    const incomeTypeNames: Record<string, string> = {
+      '50': '執行業務所得',
+      '9A': '稿費/講演鐘點費',
+      '9B': '稿費/講演鐘點費',
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
+        <div className="max-w-2xl mx-auto bg-white shadow-lg print:shadow-none">
+          {/* 標題 */}
+          <div className="p-8 border-b-2 border-gray-800">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">勞務報酬單</h1>
+              <p className="text-gray-600">Labor Service Report</p>
+            </div>
+            <div className="flex justify-between mt-6 text-sm">
+              <div>單號：{data.report_number}</div>
+              <div>發放公司：{data.company?.name}</div>
+            </div>
+          </div>
+
+          {/* 人員資訊 */}
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">壹、領款人資訊</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-gray-500">姓名：</span>
+                <span className="font-medium">{data.staff_name}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">身分證字號：</span>
+                <span className="font-medium">{data.id_number || '-'}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">人員類型：</span>
+                <span className="font-medium">{data.staff_type === 'external' ? '外部人員' : '內部人員'}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">工會成員：</span>
+                <span className="font-medium">{data.is_union_member ? '是（免扣二代健保）' : '否'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 服務內容 */}
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">貳、服務內容</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div>
+                <span className="text-gray-500">所得類別：</span>
+                <span className="font-medium">{data.income_type_code} - {incomeTypeNames[data.income_type_code] || '其他'}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">服務期間：</span>
+                <span className="font-medium">{data.service_period_start} ~ {data.service_period_end}</span>
+              </div>
+            </div>
+            {data.work_description && (
+              <div className="bg-gray-50 p-3 rounded text-sm">
+                <span className="text-gray-500">工作說明：</span>
+                {data.work_description}
+              </div>
+            )}
+          </div>
+
+          {/* 金額明細 */}
+          <div className="p-8 border-b">
+            <h3 className="font-bold text-lg mb-4">參、金額明細</h3>
+            <table className="w-full border-collapse border text-sm">
+              <tbody>
+                <tr>
+                  <td className="border p-3 bg-gray-50 font-medium w-1/2">應稅所得</td>
+                  <td className="border p-3 text-right font-bold text-lg">${formatAmount(data.gross_amount)}</td>
+                </tr>
+                <tr>
+                  <td className="border p-3 bg-gray-50 font-medium">扣繳稅額 (10%)</td>
+                  <td className="border p-3 text-right text-red-600">-${formatAmount(data.withholding_tax)}</td>
+                </tr>
+                <tr>
+                  <td className="border p-3 bg-gray-50 font-medium">
+                    二代健保 (2.11%)
+                    {data.is_union_member && <span className="text-green-600 ml-2">工會成員免扣</span>}
+                  </td>
+                  <td className="border p-3 text-right text-orange-600">
+                    {data.is_union_member ? '免扣' : `-$${formatAmount(data.nhi_premium)}`}
+                  </td>
+                </tr>
+                <tr className="bg-blue-50">
+                  <td className="border p-3 font-bold">實付金額</td>
+                  <td className="border p-3 text-right font-bold text-xl text-blue-700">${formatAmount(data.net_amount)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* 匯款帳戶 */}
+          {(data.bank_code || data.bank_account) && (
+            <div className="p-8 border-b">
+              <h3 className="font-bold text-lg mb-4">肆、匯款帳戶</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                {data.bank_code && (
+                  <div>
+                    <span className="text-gray-500">銀行代碼：</span>
+                    <span className="font-medium">{data.bank_code}</span>
+                  </div>
+                )}
+                {data.bank_account && (
+                  <div>
+                    <span className="text-gray-500">帳號：</span>
+                    <span className="font-medium font-mono">{data.bank_account}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-500">戶名：</span>
+                  <span className="font-medium">{data.staff_name}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 簽署區域 */}
+          <div className="p-8">
+            <h3 className="font-bold text-lg mb-4">簽署確認</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              本人確認以上勞務報酬內容無誤，同意依上述金額領取報酬。
+            </p>
+
+            {signed ? (
+              <div className="text-center py-8 bg-green-50 rounded-lg">
+                <p className="text-green-600 font-bold text-xl mb-2">✓ 已完成簽署</p>
+                {data.signed_at && (
+                  <p className="text-sm text-gray-500">簽署時間：{new Date(data.signed_at).toLocaleString()}</p>
+                )}
+                {data.signature_image && (
+                  <img src={data.signature_image} alt="簽名" className="mx-auto mt-4 max-h-20 border rounded" />
+                )}
+              </div>
+            ) : (
+              <div className="print:hidden space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">簽署人姓名 *</label>
+                  <input
+                    type="text"
+                    value={signerName}
+                    onChange={(e) => setSignerName(e.target.value)}
+                    className="w-full border rounded px-3 py-2"
+                    placeholder="請輸入姓名"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">簽名 *</label>
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={150}
+                    className="border rounded bg-white cursor-crosshair w-full"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
+                  <button onClick={clearSignature} className="text-sm text-blue-600 hover:underline mt-1">清除重簽</button>
+                </div>
+                <button
+                  onClick={handleSubmit}
+                  disabled={signing}
+                  className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+                >
+                  {signing ? '簽署中...' : '確認簽署'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <style jsx global>{`
+          @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .print\\:hidden { display: none !important; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // ===== 合約簽署頁面（原本邏輯） =====
+  const contract = data;
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
@@ -290,7 +489,7 @@ export default function ContractSignPage() {
           </div>
         </div>
 
-        {/* 列印/下載按鈕 */}
+        {/* 列印按鈕 */}
         <div className="p-8 border-t flex gap-4 print:hidden">
           <button onClick={handlePrint} className="flex-1 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50">
             🖨️ 列印合約 / 下載 PDF
