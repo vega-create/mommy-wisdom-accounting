@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
             due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'pending',
             labor_report_id: data.id,
-            created_by: created_by || null,
+            created_by: null,
           });
         if (payableError) {
           console.error('應付帳款建立失敗:', JSON.stringify(payableError));
