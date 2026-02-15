@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
         const month = String(new Date().getMonth() + 1).padStart(2, '0');
         const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
 
-        await supabase
+        const { error: payableError } = await supabase
           .from('acct_payable_requests')
           .insert({
             company_id,
@@ -246,6 +246,9 @@ export async function POST(request: NextRequest) {
             labor_report_id: data.id,
             created_by: created_by || null,
           });
+        if (payableError) {
+          console.error('應付帳款建立失敗:', JSON.stringify(payableError));
+        }
 
         // 更新勞報單的 payable_id
         const { data: payable } = await supabase
