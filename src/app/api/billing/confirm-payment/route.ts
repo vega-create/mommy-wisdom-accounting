@@ -128,6 +128,23 @@ export async function POST(request: NextRequest) {
 
     if (transactionError) {
       console.error('Transaction insert error:', transactionError);
+    } else if (actualBankAccountId) {
+      // 更新帳戶餘額（收入 +）
+      await supabase
+        .from('acct_bank_accounts')
+        .update({ current_balance: supabase.rpc ? undefined : 0 })
+        .eq('id', actualBankAccountId);
+      const { data: acct } = await supabase
+        .from('acct_bank_accounts')
+        .select('current_balance')
+        .eq('id', actualBankAccountId)
+        .single();
+      if (acct) {
+        await supabase
+          .from('acct_bank_accounts')
+          .update({ current_balance: parseFloat(acct.current_balance) + parseFloat(paid_amount) })
+          .eq('id', actualBankAccountId);
+      }
     }
 
     if (transaction) {

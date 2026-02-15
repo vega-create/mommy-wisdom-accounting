@@ -124,6 +124,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `建立交易記錄失敗: ${transactionError.message}` }, { status: 500 });
     }
 
+    // 更新帳戶餘額（支出 -）
+    if (actualBankAccountId) {
+      const { data: acct } = await supabase
+        .from('acct_bank_accounts')
+        .select('current_balance')
+        .eq('id', actualBankAccountId)
+        .single();
+      if (acct) {
+        await supabase
+          .from('acct_bank_accounts')
+          .update({ current_balance: parseFloat(acct.current_balance) - parseFloat(paid_amount) })
+          .eq('id', actualBankAccountId);
+      }
+    }
+
     console.log('✅ 交易記錄已建立:', transaction.id);
 
     // 2. 更新應付款項狀態
