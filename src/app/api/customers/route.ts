@@ -227,7 +227,7 @@ export async function PUT(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('acct_customers')
-      .update(updateData)
+      .update(Object.fromEntries(Object.entries(updateData).map(([k,v]) => [k, v === "" ? null : v])))
       .eq('id', id)
       .select()
       .single();
