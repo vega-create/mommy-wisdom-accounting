@@ -170,6 +170,50 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error;
 
+    // 更新成本時，自動建立/更新專案報價
+    if (data && data.cost_vendor_name) {
+      try {
+        // 查找是否已有此請款單的專案報價
+        const { data: existing } = await supabase
+          .from('acct_project_quotes')
+          .select('id')
+          .eq('company_id', data.company_id)
+          .ilike('notes', `%${data.billing_number}%`)
+          .single();
+
+        if (existing) {
+          // 更新既有記錄
+          await supabase
+            .from('acct_project_quotes')
+            .update({
+              vendor_name: data.cost_vendor_name || null,
+              cost_price: data.cost_amount || null,
+              selling_price: data.amount || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+        } else {
+          // 新建記錄
+          await supabase
+            .from('acct_project_quotes')
+            .insert({
+              company_id: data.company_id,
+              quote_date: new Date().toISOString().split('T')[0],
+              client_name: data.customer_name,
+              project_item: data.title,
+              vendor_name: data.cost_vendor_name || null,
+              cost_price: data.cost_amount || null,
+              selling_price: data.amount || null,
+              status: 'in_progress',
+              project_type: 'quote',
+              notes: `請款單 ${data.billing_number}${data.description ? ' - ' + data.description : ''}`,
+            });
+        }
+      } catch (e) {
+        console.error('自動更新專案報價失敗:', e);
+      }
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Error updating billing request:', error);

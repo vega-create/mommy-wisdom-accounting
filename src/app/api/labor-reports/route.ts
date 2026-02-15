@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
       withholding_tax: withholdingTax,
       nhi_premium: nhiPremium,
       net_amount: netAmount,
-      total_income: gross_amount, // total_income = gross_amount
+      total_income: gross_amount,
       status,
       sign_token: signToken,
       sign_url: signUrl,
@@ -221,6 +221,48 @@ export async function POST(request: NextRequest) {
         .from('acct_labor_reports')
         .update({ sign_request_sent_at: new Date().toISOString() })
         .eq('id', data.id);
+    }
+
+    // 自動建立應付帳款
+    if (data) {
+      try {
+        const year = new Date().getFullYear();
+        const month = String(new Date().getMonth() + 1).padStart(2, '0');
+        const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
+
+        await supabase
+          .from('acct_payable_requests')
+          .insert({
+            company_id,
+            payable_number: payableNumber,
+            vendor_id: freelancer_id || null,
+            vendor_name: staff_name,
+            vendor_type: 'individual',
+            title: `勞務費 - ${staff_name}`,
+            description: `勞報單 ${reportNumber}${work_description ? ' - ' + work_description : ''}`,
+            amount: netAmount,
+            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status: 'pending',
+            labor_report_id: data.id,
+            created_by: created_by || null,
+          });
+
+        // 更新勞報單的 payable_id
+        const { data: payable } = await supabase
+          .from('acct_payable_requests')
+          .select('id')
+          .eq('labor_report_id', data.id)
+          .single();
+
+        if (payable) {
+          await supabase
+            .from('acct_labor_reports')
+            .update({ payable_id: payable.id })
+            .eq('id', data.id);
+        }
+      } catch (e) {
+        console.error('自動建立應付帳款失敗:', e);
+      }
     }
 
     return NextResponse.json({ 

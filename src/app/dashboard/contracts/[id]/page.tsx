@@ -198,22 +198,71 @@ export default function ContractEditPage() {
       <div className="bg-white rounded-xl shadow p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-semibold">項目明細</h2>
-          <button onClick={addItem} className="text-blue-600 hover:underline text-sm">+ 新增項目</button>
+          <button onClick={addItem} className="text-brand-primary-700 hover:underline text-sm">+ 新增項目</button>
         </div>
         {items.map((item, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 mb-2 items-center">
             <input placeholder="項目名稱" value={item.item_name} onChange={(e) => updateItem(i, 'item_name', e.target.value)} className="col-span-4 border rounded px-2 py-1" />
-            <input type="number" placeholder="數量" value={item.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="col-span-2 border rounded px-2 py-1" />
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="數量"
+              value={item.quantity || ''}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^0-9.]/g, '');
+                updateItem(i, 'quantity', v ? Number(v) : 0);
+              }}
+              className="col-span-2 border rounded px-2 py-1"
+            />
             <input placeholder="單位" value={item.unit} onChange={(e) => updateItem(i, 'unit', e.target.value)} className="col-span-1 border rounded px-2 py-1" />
-            <input type="number" placeholder="單價" value={item.unit_price} onChange={(e) => updateItem(i, 'unit_price', Number(e.target.value))} className="col-span-2 border rounded px-2 py-1" />
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="單價"
+              value={item.unit_price || ''}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^0-9.]/g, '');
+                updateItem(i, 'unit_price', v ? Number(v) : 0);
+              }}
+              className="col-span-2 border rounded px-2 py-1"
+            />
             <div className="col-span-2 text-right">${item.amount?.toLocaleString()}</div>
             <button onClick={() => removeItem(i)} className="col-span-1 text-red-500 hover:text-red-700">✕</button>
           </div>
         ))}
-        <div className="border-t mt-4 pt-4 text-right">
-          <div>小計: ${calcSubtotal().toLocaleString()}</div>
-          <div>稅額 (5%): ${calcTax().toLocaleString()}</div>
-          <div className="text-xl font-bold text-red-600">總計: ${calcTotal().toLocaleString()}</div>
+
+        {/* 稅額選項 */}
+        <div className="border-t mt-4 pt-4">
+          <div className="flex items-center gap-4 mb-3">
+            <span className="text-sm text-gray-600">稅額計算：</span>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="tax_type"
+                checked={form.tax_type === 'taxable'}
+                onChange={() => setForm({ ...form, tax_type: 'taxable' })}
+                className="accent-red-600"
+              />
+              <span className="text-sm">外加 5% 稅</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="tax_type"
+                checked={form.tax_type === 'tax_included'}
+                onChange={() => setForm({ ...form, tax_type: 'tax_included' })}
+                className="accent-red-600"
+              />
+              <span className="text-sm">含稅（免稅）</span>
+            </label>
+          </div>
+          <div className="text-right">
+            <div>小計: ${calcSubtotal().toLocaleString()}</div>
+            {form.tax_type === 'taxable' && (
+              <div>稅額 (5%): ${calcTax().toLocaleString()}</div>
+            )}
+            <div className="text-xl font-bold text-red-600">總計: ${calcTotal().toLocaleString()}</div>
+          </div>
         </div>
       </div>
       <div className="flex gap-4">
