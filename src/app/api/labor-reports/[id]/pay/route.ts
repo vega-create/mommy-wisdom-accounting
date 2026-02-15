@@ -30,11 +30,12 @@ export async function POST(
       return NextResponse.json({ error: '勞報單不存在' }, { status: 404 });
     }
 
-    if (report.status !== 'signed') {
-      return NextResponse.json({ error: '只有已簽名的勞報單可以確認付款' }, { status: 400 });
+    if (report.status === 'paid') {
+      return NextResponse.json({ error: '此勞報單已付款' }, { status: 400 });
     }
 
     const now = new Date().toISOString();
+    const today = now.split('T')[0];
 
     // 1. 更新勞報單狀態
     const { error: updateError } = await supabase
@@ -53,12 +54,12 @@ export async function POST(
     // 2. 產生會計傳票
     const voucherNumber = `V-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
     
-    const { data: voucher, error: voucherError } = await supabase
+    const { data: voucher } = await supabase
       .from('acct_vouchers')
       .insert({
         company_id: report.company_id,
         voucher_number: voucherNumber,
-        voucher_date: now.split('T')[0],
+        voucher_date: today,
         description: `勞報單付款 - ${report.report_number} - ${report.staff_name}`,
         total_amount: report.net_amount,
         status: 'posted',
@@ -69,16 +70,24 @@ export async function POST(
       .select()
       .single();
 
-    // 3. 產生交易記錄
-    const { data: transaction, error: transError } = await supabase
+    // 3. 查詢預設費用科目
+    const { data: expenseCat } = await supabase
+      .from('acct_account_categories')
+      .select('id')
+      .eq('company_id', report.company_id)
+      .eq('code', '5100')
+      .single();
+
+    // 4. 產生交易記錄（支出）
+    const { data: transaction } = await supabase
       .from('acct_transactions')
       .insert({
         company_id: report.company_id,
         transaction_type: 'expense',
-        transaction_date: now.split('T')[0],
+        transaction_date: today,
         amount: report.net_amount,
         description: `勞務費 - ${report.staff_name} - ${report.work_description || report.report_number}`,
-        category_id: null,
+        category_id: expenseCat?.id || null,
         bank_account_id: paid_account_id || null,
         payment_status: 'completed',
         created_by: paid_by || null,
@@ -86,7 +95,7 @@ export async function POST(
       .select()
       .single();
 
-    // 4. 更新勞報單關聯交易記錄
+    // 5. 更新勞報單關聯交易記錄
     if (transaction) {
       await supabase
         .from('acct_labor_reports')
@@ -94,16 +103,44 @@ export async function POST(
         .eq('id', id);
     }
 
-    // 5. 如果有關聯應付帳款，也更新狀態
+    // 6. 同步更新應付帳款狀態（acct_payable_requests）
     if (report.payable_id) {
       await supabase
-        .from('acct_payables')
+        .from('acct_payable_requests')
         .update({
           status: 'paid',
           paid_at: now,
           paid_amount: report.net_amount,
+          transaction_id: transaction?.id || null,
+          updated_at: now,
         })
         .eq('id', report.payable_id);
+    } else {
+      // 如果沒有 payable_id，用 labor_report_id 查找
+      const { data: payable } = await supabase
+        .from('acct_payable_requests')
+        .select('id')
+        .eq('labor_report_id', id)
+        .single();
+
+      if (payable) {
+        await supabase
+          .from('acct_payable_requests')
+          .update({
+            status: 'paid',
+            paid_at: now,
+            paid_amount: report.net_amount,
+            transaction_id: transaction?.id || null,
+            updated_at: now,
+          })
+          .eq('id', payable.id);
+
+        // 回寫 payable_id
+        await supabase
+          .from('acct_labor_reports')
+          .update({ payable_id: payable.id })
+          .eq('id', id);
+      }
     }
 
     return NextResponse.json({ 

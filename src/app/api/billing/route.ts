@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    // 自動建立專案報價記錄
     if (data) {
+      // 自動建立專案報價記錄
       try {
         await supabase
           .from('acct_project_quotes')
@@ -124,6 +124,33 @@ export async function POST(request: NextRequest) {
           });
       } catch (e) {
         console.error('自動建立專案報價失敗:', e);
+      }
+
+      // 自動建立應付帳款（有成本資料時）
+      if (cost_amount && parseFloat(cost_amount) > 0 && cost_vendor_name) {
+        try {
+          const year = new Date().getFullYear();
+          const month = String(new Date().getMonth() + 1).padStart(2, '0');
+          const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
+
+          await supabase
+            .from('acct_payable_requests')
+            .insert({
+              company_id,
+              payable_number: payableNumber,
+              vendor_id: cost_vendor_id || null,
+              vendor_name: cost_vendor_name,
+              vendor_type: 'company',
+              title: `${title} - 外包成本`,
+              description: `來源請款單：${billingNumber}`,
+              amount: parseFloat(cost_amount),
+              due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              status: 'pending',
+              billing_request_id: data.id
+            });
+        } catch (e) {
+          console.error('自動建立應付帳款失敗:', e);
+        }
       }
     }
 
@@ -182,7 +209,6 @@ export async function PUT(request: NextRequest) {
           .single();
 
         if (existing) {
-          // 更新既有記錄
           await supabase
             .from('acct_project_quotes')
             .update({
@@ -193,7 +219,6 @@ export async function PUT(request: NextRequest) {
             })
             .eq('id', existing.id);
         } else {
-          // 新建記錄
           await supabase
             .from('acct_project_quotes')
             .insert({
@@ -211,6 +236,51 @@ export async function PUT(request: NextRequest) {
         }
       } catch (e) {
         console.error('自動更新專案報價失敗:', e);
+      }
+
+      // 更新成本時，同步更新/建立應付帳款
+      if (data.cost_amount > 0) {
+        try {
+          const { data: existingPayable } = await supabase
+            .from('acct_payable_requests')
+            .select('id')
+            .eq('billing_request_id', data.id)
+            .single();
+
+          if (existingPayable) {
+            await supabase
+              .from('acct_payable_requests')
+              .update({
+                vendor_id: data.cost_vendor_id || null,
+                vendor_name: data.cost_vendor_name,
+                amount: data.cost_amount,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingPayable.id);
+          } else {
+            const year = new Date().getFullYear();
+            const month = String(new Date().getMonth() + 1).padStart(2, '0');
+            const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
+
+            await supabase
+              .from('acct_payable_requests')
+              .insert({
+                company_id: data.company_id,
+                payable_number: payableNumber,
+                vendor_id: data.cost_vendor_id || null,
+                vendor_name: data.cost_vendor_name,
+                vendor_type: 'company',
+                title: `${data.title} - 外包成本`,
+                description: `來源請款單：${data.billing_number}`,
+                amount: data.cost_amount,
+                due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                status: 'pending',
+                billing_request_id: data.id
+              });
+          }
+        } catch (e) {
+          console.error('自動更新應付帳款失敗:', e);
+        }
       }
     }
 

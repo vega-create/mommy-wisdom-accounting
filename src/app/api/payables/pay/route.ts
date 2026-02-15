@@ -55,9 +55,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '找不到應付款項' }, { status: 404 });
     }
 
+    if (payable.status === 'paid') {
+      return NextResponse.json({ error: '此應付款項已付款' }, { status: 400 });
+    }
+
     console.log('找到應付款項:', payable.payable_number);
 
     const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toISOString();
 
     // 查詢預設費用科目（勞務成本）
     const { data: expenseCat } = await supabase
@@ -98,11 +103,11 @@ export async function POST(request: NextRequest) {
       .from('acct_payable_requests')
       .update({
         status: 'paid',
-        paid_at: new Date().toISOString(),
+        paid_at: now,
         paid_amount: parseFloat(paid_amount),
         payment_note,
         transaction_id: transaction.id,
-        updated_at: new Date().toISOString()
+        updated_at: now
       })
       .eq('id', payable_id);
 
@@ -113,7 +118,51 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ 應付款項已更新為已付款');
 
-    // 3. 發送通知給外包
+    // 3. 同步更新勞報單狀態（如果有關聯）
+    if (payable.labor_report_id) {
+      try {
+        // 先檢查勞報單是否已付款（避免重複）
+        const { data: report } = await supabase
+          .from('acct_labor_reports')
+          .select('id, status')
+          .eq('id', payable.labor_report_id)
+          .single();
+
+        if (report && report.status !== 'paid') {
+          await supabase
+            .from('acct_labor_reports')
+            .update({
+              status: 'paid',
+              paid_at: now,
+              paid_account_id: bank_account_id || null,
+              transaction_id: transaction.id,
+              payment_notified_at: now,
+            })
+            .eq('id', payable.labor_report_id);
+
+          // 產生會計傳票
+          const voucherNumber = `V-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+          await supabase
+            .from('acct_vouchers')
+            .insert({
+              company_id: payable.company_id,
+              voucher_number: voucherNumber,
+              voucher_date: today,
+              description: `應付款項付款 - ${payable.payable_number} - ${payable.vendor_name}`,
+              total_amount: parseFloat(paid_amount),
+              status: 'posted',
+              source_type: 'payable',
+              source_id: payable_id,
+            });
+
+          console.log('✅ 勞報單已同步更新為已付款');
+        }
+      } catch (e) {
+        console.error('同步勞報單狀態失敗:', e);
+      }
+    }
+
+    // 4. 發送通知給外包
     let notificationSent = false;
     if (send_notification) {
       const lineRecipientId = payable.vendor?.line_group_id || payable.vendor?.line_user_id;
@@ -128,11 +177,9 @@ export async function POST(request: NextRequest) {
             .single();
 
           if (lineSettings?.channel_access_token) {
-            // 根據廠商類型使用不同訊息
             let message = '';
 
             if (payable.vendor_type === 'company') {
-              // 公司類型：通知開發票
               message = `${payable.vendor_name} 您好：
 
 已匯款 NT$ ${parseFloat(paid_amount).toLocaleString()} 元至貴司帳戶。
@@ -144,7 +191,6 @@ export async function POST(request: NextRequest) {
 
 智慧媽咪國際 敬上`;
             } else {
-              // 個人類型：通知已匯款
               message = `${payable.vendor_name} 您好：
 
 已匯款 NT$ ${parseFloat(paid_amount).toLocaleString()} 元至您的帳戶。

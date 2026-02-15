@@ -28,8 +28,8 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { 
-      billing_id, 
+    const {
+      billing_id,
       paid_amount,
       payment_method,
       payment_note,
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', billing_id);
 
-   // 查詢預設收入科目
+    // 查詢預設收入科目
     const { data: incomeCat } = await supabase
       .from('acct_account_categories')
       .select('id')
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       .eq('code', '4100')
       .single();
 
-    // 建立交易記錄
+    // 建立收入交易記錄
     const { data: transaction, error: transactionError } = await supabase
       .from('acct_transactions')
       .insert({
@@ -108,37 +108,7 @@ export async function POST(request: NextRequest) {
         .eq('id', billing_id);
     }
 
-    // 如果有成本，建立應付款項
-    let payableId = null;
-    if (billing.cost_amount > 0 && (billing.cost_vendor_id || billing.cost_vendor_name)) {
-      try {
-        const year = new Date().getFullYear();
-        const month = String(new Date().getMonth() + 1).padStart(2, '0');
-        const payableNumber = `PAY${year}${month}${Date.now().toString().slice(-4)}`;
-
-        const { data: payable } = await supabase
-          .from('acct_payable_requests')
-          .insert({
-            company_id: billing.company_id,
-            payable_number: payableNumber,
-            vendor_id: billing.cost_vendor_id || null,
-            vendor_name: billing.cost_vendor_name || '未指定',
-            vendor_type: 'company',
-            title: `${billing.title} - 外包成本`,
-            description: `來源請款單：${billing.billing_number}`,
-            amount: billing.cost_amount,
-            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            status: 'pending',
-            billing_request_id: billing.id
-          })
-          .select()
-          .single();
-
-        if (payable) payableId = payable.id;
-      } catch (e) {
-        console.error('Create payable error:', e);
-      }
-    }
+    // 注意：應付帳款已在請款單建立時自動建立，這裡不再重複建立
 
     // 發送 LINE 通知
     const lineRecipientId = billing.customer_line_group_id || billing.customer_line_id;
@@ -161,10 +131,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: '收款確認完成',
-      data: { billing_id, transaction_id: transaction?.id, payable_id: payableId }
+      data: { billing_id, transaction_id: transaction?.id }
     });
 
   } catch (error) {
