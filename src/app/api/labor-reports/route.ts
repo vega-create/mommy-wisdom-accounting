@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
           .insert({
             company_id,
             payable_number: payableNumber,
-            vendor_id: freelancer_id || null,
+            vendor_id: null,
             vendor_name: staff_name,
             vendor_type: 'individual',
             title: `勞務費 - ${staff_name}`,
@@ -265,15 +265,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data,
       sign_url: signUrl,
     });
   } catch (error) {
     console.error('Error creating labor report:', error);
-    return NextResponse.json({ 
-      error: `新增勞報單失敗: ${error instanceof Error ? error.message : '未知錯誤'}` 
+    return NextResponse.json({
+      error: `新增勞報單失敗: ${error instanceof Error ? error.message : '未知錯誤'}`
     }, { status: 500 });
   }
 }
