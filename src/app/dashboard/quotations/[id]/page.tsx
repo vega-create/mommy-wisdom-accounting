@@ -103,8 +103,8 @@ export default function QuotationEditPage() {
           </div>
         ))}
         <div className="border-t mt-4 pt-4 text-right space-y-1">
-          <div className="text-gray-600">小計: ${calcSubtotal().toLocaleString()}</div>
-          <div className="text-gray-600">稅額 (5%): ${calcTax().toLocaleString()}</div>
+          <div className="flex items-center gap-4 mb-3"><span className="text-sm text-gray-600">稅額計算：</span><label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="tax_type" checked={form.tax_type === "taxable"} onChange={() => setForm({ ...form, tax_type: "taxable" })} className="accent-red-600" /><span className="text-sm">外加 5% 稅</span></label><label className="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="tax_type" checked={form.tax_type === "tax_included"} onChange={() => setForm({ ...form, tax_type: "tax_included" })} className="accent-red-600" /><span className="text-sm">含稅（免稅）</span></label></div><div className="text-gray-600">小計: ${calcSubtotal().toLocaleString()}</div>
+          {form.tax_type === "taxable" && <div className="text-gray-600">稅額 (5%): ${calcTax().toLocaleString()}</div>}
           <div className="text-xl font-bold text-red-600">總計: ${calcTotal().toLocaleString()}</div>
         </div>
       </div>
