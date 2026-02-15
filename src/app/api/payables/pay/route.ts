@@ -24,6 +24,32 @@ async function sendLineMessage(accessToken: string, to: string, text: string) {
   }
 }
 
+// 透過 payment_account_id 查詢對應的 bank_account_id
+async function resolveBankAccountId(supabase: any, companyId: string, paymentAccountId: string | null): Promise<string | null> {
+  if (!paymentAccountId) return null;
+  try {
+    const { data: paymentAcct } = await supabase
+      .from('acct_payment_accounts')
+      .select('account_number')
+      .eq('id', paymentAccountId)
+      .single();
+
+    if (paymentAcct) {
+      const { data: bankAcct } = await supabase
+        .from('acct_bank_accounts')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('account_number', paymentAcct.account_number)
+        .single();
+
+      if (bankAcct) return bankAcct.id;
+    }
+  } catch (e) {
+    console.error('查詢 bank_account_id 失敗:', e);
+  }
+  return null;
+}
+
 // POST - 確認付款
 export async function POST(request: NextRequest) {
   try {
@@ -64,6 +90,9 @@ export async function POST(request: NextRequest) {
     const today = new Date().toISOString().split('T')[0];
     const now = new Date().toISOString();
 
+    // 查詢對應的 bank_account_id（payment_accounts → bank_accounts）
+    const actualBankAccountId = await resolveBankAccountId(supabase, payable.company_id, bank_account_id);
+
     // 查詢預設費用科目（勞務成本）
     const { data: expenseCat } = await supabase
       .from('acct_account_categories')
@@ -83,7 +112,7 @@ export async function POST(request: NextRequest) {
         description: `${payable.title} - ${payable.vendor_name}`,
         amount: parseFloat(paid_amount),
         customer_id: payable.vendor_id,
-        bank_account_id: bank_account_id || null,
+        bank_account_id: actualBankAccountId,
         category_id: expenseCat?.id || null,
         notes: payment_note || `應付款項付款：${payable.payable_number}`
       })
@@ -121,7 +150,6 @@ export async function POST(request: NextRequest) {
     // 3. 同步更新勞報單狀態（如果有關聯）
     if (payable.labor_report_id) {
       try {
-        // 先檢查勞報單是否已付款（避免重複）
         const { data: report } = await supabase
           .from('acct_labor_reports')
           .select('id, status')

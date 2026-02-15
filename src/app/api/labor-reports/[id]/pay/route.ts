@@ -3,6 +3,31 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// 透過 payment_account_id 查詢對應的 bank_account_id
+async function resolveBankAccountId(supabase: any, companyId: string, paymentAccountId: string | null): Promise<string | null> {
+  if (!paymentAccountId) return null;
+  try {
+    const { data: paymentAcct } = await supabase
+      .from('acct_payment_accounts')
+      .select('account_number')
+      .eq('id', paymentAccountId)
+      .single();
+
+    if (paymentAcct) {
+      const { data: bankAcct } = await supabase
+        .from('acct_bank_accounts')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('account_number', paymentAcct.account_number)
+        .single();
+
+      if (bankAcct) return bankAcct.id;
+    }
+  } catch (e) {
+    console.error('查詢 bank_account_id 失敗:', e);
+  }
+  return null;
+}
 
 // POST - 確認付款
 export async function POST(
@@ -36,6 +61,9 @@ export async function POST(
 
     const now = new Date().toISOString();
     const today = now.split('T')[0];
+
+    // 查詢對應的 bank_account_id
+    const actualBankAccountId = await resolveBankAccountId(supabase, report.company_id, paid_account_id);
 
     // 1. 更新勞報單狀態
     const { error: updateError } = await supabase
@@ -88,7 +116,7 @@ export async function POST(
         amount: report.net_amount,
         description: `勞務費 - ${report.staff_name} - ${report.work_description || report.report_number}`,
         category_id: expenseCat?.id || null,
-        bank_account_id: paid_account_id || null,
+        bank_account_id: actualBankAccountId,
         payment_status: 'completed',
         created_by: paid_by || null,
       })

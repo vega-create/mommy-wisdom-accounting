@@ -24,12 +24,38 @@ async function sendLineMessage(accessToken: string, to: string, text: string) {
   return response;
 }
 
+// 透過 payment_account_id 查詢對應的 bank_account_id
+async function resolveBankAccountId(supabase: any, companyId: string, paymentAccountId: string | null): Promise<string | null> {
+  if (!paymentAccountId) return null;
+  try {
+    const { data: paymentAcct } = await supabase
+      .from('acct_payment_accounts')
+      .select('account_number')
+      .eq('id', paymentAccountId)
+      .single();
+
+    if (paymentAcct) {
+      const { data: bankAcct } = await supabase
+        .from('acct_bank_accounts')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('account_number', paymentAcct.account_number)
+        .single();
+
+      if (bankAcct) return bankAcct.id;
+    }
+  } catch (e) {
+    console.error('查詢 bank_account_id 失敗:', e);
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const {
-      billing_id,
+    const { 
+      billing_id, 
       paid_amount,
       payment_method,
       payment_note,
@@ -72,6 +98,9 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', billing_id);
 
+    // 查詢對應的 bank_account_id
+    const actualBankAccountId = await resolveBankAccountId(supabase, billing.company_id, bank_account_id);
+
     // 查詢預設收入科目
     const { data: incomeCat } = await supabase
       .from('acct_account_categories')
@@ -90,7 +119,7 @@ export async function POST(request: NextRequest) {
         description: `${billing.title} - ${billing.customer_name}`,
         amount: parseFloat(paid_amount),
         customer_id: billing.customer_id || null,
-        bank_account_id: bank_account_id || null,
+        bank_account_id: actualBankAccountId,
         category_id: incomeCat?.id || null,
         notes: payment_note || `請款單收款：${billing.billing_number}`
       })
@@ -131,8 +160,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json({ 
+      success: true, 
       message: '收款確認完成',
       data: { billing_id, transaction_id: transaction?.id }
     });
