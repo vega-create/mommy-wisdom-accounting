@@ -549,12 +549,10 @@ export default function LinePage() {
   const handleSendMessage = async () => {
     if (!company?.id) return;
 
-    // 多群組模式
     if (sendForm.recipientType === 'group' && sendForm.selectedGroupIds.length === 0) {
       alert('請至少選擇一個群組');
       return;
     }
-    // 個人模式
     if (sendForm.recipientType === 'user' && !sendForm.recipientId) {
       alert('請輸入 LINE User ID');
       return;
@@ -601,7 +599,7 @@ export default function LinePage() {
         setSendSuccess(true);
         if (result.results) {
           const total = result.results.length;
-          const ok = result.results.filter((r: any) => r.success).length;
+          const ok = result.results.filter((r) => r.success).length;
           const fail = total - ok;
           alert(fail > 0 ? `發送完成！成功 ${ok} 個群組，失敗 ${fail} 個` : `訊息已成功發送至 ${ok} 個群組！`);
         } else {
@@ -1158,26 +1156,27 @@ export default function LinePage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {sendForm.recipientType === 'group' ? '選擇群組' : '輸入 LINE User ID'}
+                    {sendForm.recipientType === 'group' ? '選擇群組（可多選）' : '輸入 LINE User ID'}
                   </label>
                   {sendForm.recipientType === 'group' ? (
-                    <select
-                      value={sendForm.recipientId}
-                      onChange={(e) => {
-                        const selectedGroup = groups.find(g => g.group_id === e.target.value);
-                        setSendForm({
-                          ...sendForm,
-                          recipientId: e.target.value,
-                          recipientName: selectedGroup?.group_name || ''
-                        });
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-primary-500"
-                    >
-                      <option value="">請選擇群組...</option>
-                      {groups.filter(g => g.is_active).map((g) => (
-                        <option key={g.id} value={g.group_id}>{g.group_name}</option>
-                      ))}
-                    </select>
+                    <div>
+                      <div className="flex gap-2 mb-2">
+                        <button type="button" onClick={() => setSendForm({ ...sendForm, selectedGroupIds: groups.filter(g => g.is_active).map(g => g.group_id) })} className="text-xs text-blue-600 hover:text-blue-800 underline">全選</button>
+                        <button type="button" onClick={() => setSendForm({ ...sendForm, selectedGroupIds: [] })} className="text-xs text-gray-500 hover:text-gray-700 underline">取消全選</button>
+                        {sendForm.selectedGroupIds.length > 0 && <span className="text-xs text-green-600 ml-auto">已選 {sendForm.selectedGroupIds.length} 個群組</span>}
+                      </div>
+                      <div className="border rounded-lg max-h-48 overflow-y-auto p-2 space-y-1 bg-white">
+                        {groups.filter(g => g.is_active).length === 0 ? (
+                          <p className="text-sm text-gray-400 p-2">尚無群組，請先新增</p>
+                        ) : groups.filter(g => g.is_active).map(group => (
+                          <label key={group.id} className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-gray-50 ${sendForm.selectedGroupIds.includes(group.group_id) ? 'bg-blue-50 border border-blue-200' : ''}`}>
+                            <input type="checkbox" checked={sendForm.selectedGroupIds.includes(group.group_id)} onChange={(e) => { const id = group.group_id; if (e.target.checked) { setSendForm({ ...sendForm, selectedGroupIds: [...sendForm.selectedGroupIds, id] }); } else { setSendForm({ ...sendForm, selectedGroupIds: sendForm.selectedGroupIds.filter((gid) => gid !== id) }); } }} className="rounded text-blue-600 w-4 h-4" />
+                            <span className="text-sm font-medium">{group.group_name}</span>
+                            {group.description && <span className="text-xs text-gray-400 ml-auto">{group.description}</span>}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     <input
                       type="text"
@@ -1273,13 +1272,13 @@ export default function LinePage() {
 
                 <button
                   onClick={handleSendMessage}
-                  disabled={isSending || !sendForm.recipientId || (!sendForm.templateId && !sendForm.customMessage)}
+                  disabled={isSending || (sendForm.recipientType === 'group' ? sendForm.selectedGroupIds.length === 0 : !sendForm.recipientId) || (!sendForm.templateId && !sendForm.customMessage)}
                   className="w-full py-3 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isSending ? (
                     <><RefreshCw className="w-4 h-4 animate-spin" /> 發送中...</>
                   ) : (
-                    <><Send className="w-4 h-4" /> 發送訊息</>
+                    <><Send className="w-4 h-4" /> {sendForm.recipientType === 'group' && sendForm.selectedGroupIds.length > 0 ? `發送至 ${sendForm.selectedGroupIds.length} 個群組` : '發送訊息'}</>
                   )}
                 </button>
               </div>
