@@ -138,6 +138,7 @@ export default function LinePage() {
   // Send state
   const [sendForm, setSendForm] = useState({
     recipientType: 'group' as 'group' | 'user',
+    selectedGroupIds: [] as string[],
     recipientId: '',
     recipientName: '',
     templateId: '',
@@ -547,8 +548,15 @@ export default function LinePage() {
   // ========== 發送訊息函數 ==========
   const handleSendMessage = async () => {
     if (!company?.id) return;
-    if (!sendForm.recipientId) {
-      alert('請選擇發送對象');
+
+    // 多群組模式
+    if (sendForm.recipientType === 'group' && sendForm.selectedGroupIds.length === 0) {
+      alert('請至少選擇一個群組');
+      return;
+    }
+    // 個人模式
+    if (sendForm.recipientType === 'user' && !sendForm.recipientId) {
+      alert('請輸入 LINE User ID');
       return;
     }
 
@@ -572,13 +580,15 @@ export default function LinePage() {
     setIsSending(true);
     setSendSuccess(false);
     try {
+      const isMultiGroup = sendForm.recipientType === 'group' && sendForm.selectedGroupIds.length > 0;
       const response = await fetch('/api/line/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_id: company.id,
-          recipient_type: sendForm.recipientType,
-          recipient_id: sendForm.recipientId,
+          recipient_type: isMultiGroup ? 'multi_group' : sendForm.recipientType,
+          recipient_ids: isMultiGroup ? sendForm.selectedGroupIds : undefined,
+          recipient_id: !isMultiGroup ? sendForm.recipientId : undefined,
           recipient_name: sendForm.recipientName,
           template_id: sendForm.useTemplate ? sendForm.templateId : null,
           content: messageContent,
@@ -589,9 +599,17 @@ export default function LinePage() {
 
       if (result.success) {
         setSendSuccess(true);
-        alert('訊息已發送！');
+        if (result.results) {
+          const total = result.results.length;
+          const ok = result.results.filter((r: any) => r.success).length;
+          const fail = total - ok;
+          alert(fail > 0 ? `發送完成！成功 ${ok} 個群組，失敗 ${fail} 個` : `訊息已成功發送至 ${ok} 個群組！`);
+        } else {
+          alert('訊息已發送！');
+        }
         setSendForm({
           ...sendForm,
+          selectedGroupIds: [],
           recipientId: '',
           recipientName: '',
           templateId: '',
@@ -608,7 +626,6 @@ export default function LinePage() {
       setIsSending(false);
     }
   };
-
   // ========== 發送記錄 ==========
   const handleLoadMessages = async () => {
     if (!company?.id) return;

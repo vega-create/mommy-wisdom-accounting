@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       company_id, 
       recipient_type,
       recipient_id,
+      recipient_ids,
       recipient_name,
       template_id,
       content,
@@ -59,8 +60,8 @@ export async function POST(request: NextRequest) {
       created_by 
     } = body;
 
-    if (!company_id || !recipient_id) {
-      return NextResponse.json({ error: '缺少必要欄位' }, { status: 400 });
+    if (!company_id) {
+      return NextResponse.json({ error: '缺少 company_id' }, { status: 400 });
     }
 
     const { data: settings, error: settingsError } = await supabase
@@ -111,6 +112,76 @@ export async function POST(request: NextRequest) {
           .update({ usage_count: (template.usage_count || 0) + 1 })
           .eq('id', template_id);
       }
+    }
+
+    // ====== 多群組發送 ======
+    if (recipient_type === 'multi_group' && Array.isArray(recipient_ids) && recipient_ids.length > 0) {
+      const { data: groupList } = await supabase
+        .from('acct_line_groups')
+        .select('group_id, group_name')
+        .in('group_id', recipient_ids);
+
+      const groupNameMap: Record<string, string> = {};
+      (groupList || []).forEach((g: any) => {
+        groupNameMap[g.group_id] = g.group_name;
+      });
+
+      const results = [];
+
+      for (const gid of recipient_ids) {
+        const gName = groupNameMap[gid] || gid;
+        try {
+          await sendLineMessage(
+            settings.channel_access_token,
+            'push',
+            gid,
+            [{ type: 'text', text: messageContent }]
+          );
+
+          await supabase.from('acct_line_messages').insert({
+            company_id,
+            template_id: template_id || null,
+            recipient_type: 'group',
+            recipient_id: gid,
+            recipient_name: gName,
+            message_type: 'text',
+            content: messageContent,
+            variables_used: variables || null,
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            created_by
+          });
+
+          results.push({ group_id: gid, group_name: gName, success: true });
+        } catch (err: any) {
+          await supabase.from('acct_line_messages').insert({
+            company_id,
+            template_id: template_id || null,
+            recipient_type: 'group',
+            recipient_id: gid,
+            recipient_name: gName,
+            message_type: 'text',
+            content: messageContent,
+            status: 'failed',
+            error_message: err?.message || '發送失敗',
+            created_by
+          });
+
+          results.push({ group_id: gid, group_name: gName, success: false, error: err?.message });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      return NextResponse.json({
+        success: successCount > 0,
+        message: `成功發送 ${successCount}/${results.length} 個群組`,
+        results
+      });
+    }
+
+    // ====== 單一發送（向下相容）======
+    if (!recipient_id) {
+      return NextResponse.json({ error: '缺少 recipient_id' }, { status: 400 });
     }
 
     const { data: message, error: messageError } = await supabase
