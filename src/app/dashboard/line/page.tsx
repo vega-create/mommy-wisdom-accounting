@@ -147,7 +147,7 @@ export default function LinePage() {
   });
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [isSending, setIsSending] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<{url: string; fileName: string; fileType: string; fileSize: number}[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{ url: string; fileName: string; fileType: string; fileSize: number }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
 
@@ -874,8 +874,8 @@ export default function LinePage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex gap-4">
+      <div className="border-b border-gray-200 overflow-x-auto">
+        <nav className="flex gap-4 min-w-max">
           {tabs.map((tab) => (
             <button
               key={tab.id}
