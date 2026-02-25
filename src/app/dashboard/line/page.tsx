@@ -1305,6 +1305,44 @@ export default function LinePage() {
                   )}
                 </div>
 
+                {/* 檔案上傳區 */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">附加檔案（圖片/PDF）</label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer text-sm">
+                      <Paperclip className="w-4 h-4" />
+                      {isUploading ? '上傳中...' : '選擇檔案'}
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        multiple
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-xs text-gray-400">支援圖片和 PDF，單檔 10MB 以內</span>
+                  </div>
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {uploadedFiles.map((f, i) => (
+                        <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                          {f.fileType.startsWith('image/') ? (
+                            <Image className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <FileTextIcon className="w-4 h-4 text-red-600" />
+                          )}
+                          <span className="text-sm flex-1 truncate">{f.fileName}</span>
+                          <span className="text-xs text-gray-400">{Math.round(f.fileSize / 1024)} KB</span>
+                          <button type="button" onClick={() => removeFile(i)} className="text-gray-400 hover:text-red-500">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   onClick={handleSendMessage}
                   disabled={isSending || isUploading || (sendForm.recipientType === 'group' ? sendForm.selectedGroupIds.length === 0 : !sendForm.recipientId) || (!sendForm.templateId && !sendForm.customMessage && uploadedFiles.length === 0)}
