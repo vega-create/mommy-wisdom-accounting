@@ -36,6 +36,79 @@ async function sendLineMessage(
   return response;
 }
 
+
+async function sendLineMessages(
+  accessToken: string,
+  targetId: string,
+  messages: any[]
+) {
+  const response = await fetch(LINE_API_URL + '/push', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + accessToken,
+    },
+    body: JSON.stringify({ to: targetId, messages }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'LINE API 錯誤');
+  }
+
+  return response;
+}
+
+function buildLineMessages(content: string, attachments?: any[]) {
+  const messages: any[] = [];
+
+  // 文字訊息
+  if (content && content.trim()) {
+    messages.push({ type: 'text', text: content });
+  }
+
+  // 附件
+  if (attachments && attachments.length > 0) {
+    for (const att of attachments) {
+      if (att.fileType && att.fileType.startsWith('image/')) {
+        // 圖片：LINE 原生顯示
+        messages.push({
+          type: 'image',
+          originalContentUrl: att.url,
+          previewImageUrl: att.url
+        });
+      } else if (att.fileType === 'application/pdf') {
+        // PDF：Flex Message 卡片 + 下載按鈕
+        messages.push({
+          type: 'flex',
+          altText: '📎 ' + (att.fileName || '檔案'),
+          contents: {
+            type: 'bubble',
+            size: 'kilo',
+            body: {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                { type: 'text', text: '📎 ' + (att.fileName || '檔案'), weight: 'bold', size: 'sm', wrap: true },
+                { type: 'text', text: (att.fileSize ? Math.round(att.fileSize / 1024) + ' KB' : ''), size: 'xs', color: '#999999', margin: 'sm' }
+              ]
+            },
+            footer: {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                { type: 'button', action: { type: 'uri', label: '下載 / 開啟', uri: att.url }, style: 'primary', height: 'sm' }
+              ]
+            }
+          }
+        });
+      }
+    }
+  }
+
+  return messages.length > 0 ? messages : [{ type: 'text', text: content || '(空訊息)' }];
+}
+
 function replaceVariables(content: string, variables: Record<string, string>) {
   let result = content;
   for (const [key, value] of Object.entries(variables)) {
@@ -116,6 +189,8 @@ export async function POST(request: NextRequest) {
 
     // ====== 多群組發送 ======
     if (recipient_type === 'multi_group' && Array.isArray(recipient_ids) && recipient_ids.length > 0) {
+      const attachments = body.attachments;
+
       const { data: groupList } = await supabase
         .from('acct_line_groups')
         .select('group_id, group_name')
@@ -131,12 +206,8 @@ export async function POST(request: NextRequest) {
       for (const gid of recipient_ids) {
         const gName = groupNameMap[gid] || gid;
         try {
-          await sendLineMessage(
-            settings.channel_access_token,
-            'push',
-            gid,
-            [{ type: 'text', text: messageContent }]
-          );
+          const msgs = buildLineMessages(messageContent, attachments);
+          await sendLineMessages(settings.channel_access_token, gid, msgs);
 
           await supabase.from('acct_line_messages').insert({
             company_id,
@@ -204,12 +275,9 @@ export async function POST(request: NextRequest) {
     if (messageError) throw messageError;
 
     try {
-      await sendLineMessage(
-        settings.channel_access_token,
-        'push',
-        recipient_id,
-        [{ type: 'text', text: messageContent }]
-      );
+      const attachments2 = body.attachments;
+      const msgs = buildLineMessages(messageContent, attachments2);
+      await sendLineMessages(settings.channel_access_token, recipient_id, msgs);
 
       await supabase
         .from('acct_line_messages')

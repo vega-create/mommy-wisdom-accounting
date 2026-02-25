@@ -7,7 +7,7 @@ import {
   MessageCircle, Settings, Users, FileText, Send,
   Plus, Edit2, Trash2, Eye, Check, X, RefreshCw,
   AlertCircle, CheckCircle, Clock, ChevronDown,
-  Calendar, Play, Pause
+  Calendar, Play, Pause, Paperclip, Image, FileText as FileTextIcon
 } from 'lucide-react';
 
 // Types
@@ -147,6 +147,8 @@ export default function LinePage() {
   });
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [isSending, setIsSending] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<{url: string; fileName: string; fileType: string; fileSize: number}[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
 
   // History state
@@ -546,6 +548,37 @@ export default function LinePage() {
   };
 
   // ========== 發送訊息函數 ==========
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !company?.id) return;
+    setIsUploading(true);
+    try {
+      const newFiles = [];
+      for (const file of Array.from(e.target.files)) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('company_id', company.id);
+        const res = await fetch('/api/line/upload', { method: 'POST', body: formData });
+        const result = await res.json();
+        if (result.success) {
+          newFiles.push(result.data);
+        } else {
+          alert('上傳失敗: ' + (result.error || file.name));
+        }
+      }
+      setUploadedFiles(prev => [...prev, ...newFiles]);
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('上傳失敗');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSendMessage = async () => {
     if (!company?.id) return;
 
@@ -590,7 +623,8 @@ export default function LinePage() {
           recipient_name: sendForm.recipientName,
           template_id: sendForm.useTemplate ? sendForm.templateId : null,
           content: messageContent,
-          variables: sendForm.useTemplate ? templateVariables : null
+          variables: sendForm.useTemplate ? templateVariables : null,
+          attachments: uploadedFiles.length > 0 ? uploadedFiles : undefined
         })
       });
       const result = await response.json();
@@ -614,6 +648,7 @@ export default function LinePage() {
           customMessage: ''
         });
         setTemplateVariables({});
+        setUploadedFiles([]);
       } else {
         alert(result.error || '發送失敗');
       }
@@ -1272,7 +1307,7 @@ export default function LinePage() {
 
                 <button
                   onClick={handleSendMessage}
-                  disabled={isSending || (sendForm.recipientType === 'group' ? sendForm.selectedGroupIds.length === 0 : !sendForm.recipientId) || (!sendForm.templateId && !sendForm.customMessage)}
+                  disabled={isSending || isUploading || (sendForm.recipientType === 'group' ? sendForm.selectedGroupIds.length === 0 : !sendForm.recipientId) || (!sendForm.templateId && !sendForm.customMessage && uploadedFiles.length === 0)}
                   className="w-full py-3 bg-brand-primary-600 text-white rounded-lg hover:bg-brand-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isSending ? (
@@ -1297,7 +1332,7 @@ export default function LinePage() {
                     ) : sendForm.customMessage ? (
                       <p className="whitespace-pre-line">{sendForm.customMessage}</p>
                     ) : (
-                      <p className="text-gray-600 italic">訊息預覽將顯示在這裡</p>
+                      <p className="text-gray-600 italic">{uploadedFiles.length > 0 ? '(' + uploadedFiles.length + ' 個附件)' : '訊息預覽將顯示在這裡'}</p>
                     )}
                   </div>
                 </div>
