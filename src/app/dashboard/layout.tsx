@@ -49,7 +49,9 @@ export default function DashboardLayout({
       <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
         <main className="flex-1 overflow-auto">
-          <div className="p-6">
+          {/* 手機版頂部留白（固定 Header 高度）*/}
+          <div className="md:hidden h-14" />
+          <div className="p-4 md:p-6">
             {children}
           </div>
         </main>
