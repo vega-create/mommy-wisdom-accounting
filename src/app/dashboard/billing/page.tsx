@@ -617,21 +617,56 @@ export default function BillingPage() {
       ? `${account.bank_name} ${account.branch_name || ''}\n帳號：${account.account_number}\n戶名：${account.account_name}`
       : '（請設定收款帳戶）';
 
-    const defaultMessage = `【請款通知】
+    // 自動抓廣告報告連結
+    let reportSection = '';
+    if (billing.customer_line_group_id) {
+      try {
+        const reportRes = await fetch(`/api/ad-report?line_group_id=${billing.customer_line_group_id}`);
+        const reportResult = await reportRes.json();
+        if (reportResult.data?.report_url) {
+          reportSection = `\n📊 最新廣告報告：\n${reportResult.data.report_url}\n`;
+        }
+      } catch (e) {
+        console.error('Error fetching ad report:', e);
+      }
+    }
 
-${billing.customer_name} 您好，
+    const isAUD = billing.customer?.currency === 'AUD';
+    const billingMonthText = billing.billing_month
+      ? billing.billing_month.replace('-', '年') + '月'
+      : '';
 
-${billing.billing_month ? `${billing.billing_month.replace('-', '年')}月` : ''}${billing.title}費用請款如下：
+    const defaultMessage = isAUD
+      ? `親愛的 ${billing.customer_name}，您好！
 
-請款金額：NT$ ${(billing.total_amount || billing.amount || 0).toLocaleString()}
-付款期限：${new Date(billing.due_date).toLocaleDateString('zh-TW')}
+您 ${billingMonthText}的服務費用已產生，敬請於期限內完成匯款，謝謝！
+
+💰 費用金額：AUD $${(billing.total_amount || billing.amount || 0).toLocaleString()}
+📅 付款期限：${new Date(billing.due_date).toLocaleDateString('zh-TW')} 前
+
+電匯資訊：
+銀行：國泰世華銀行 豐原分行
+SWIFT Code：UWCBTWTP
+戶名：Lin Yang Ting
+帳號：035080084208
+電話：+886 919 070 846
+
+匯款完成後，請告知匯款參考編號，我們將於確認後 3 個工作天內提供收據。${reportSection}
+如有任何疑問，歡迎隨時聯繫。
+
+智慧媽咪國際有限公司 敬上`
+      : `親愛的 ${billing.customer_name}，您好！
+
+您 ${billingMonthText}${billing.title}費用請款如下：
+
+💰 費用金額：NT$ ${(billing.total_amount || billing.amount || 0).toLocaleString()} 元
+📅 付款期限：${new Date(billing.due_date).toLocaleDateString('zh-TW')} 前
 
 匯款資訊：
-${accountInfo}
-
+${accountInfo}${reportSection}
 如已付款請忽略此通知，謝謝！
 
-智慧媽咪國際 敬上`;
+智慧媽咪國際有限公司 敬上`;
 
     setPreviewBilling(billing);
     setPreviewMessage(defaultMessage);
