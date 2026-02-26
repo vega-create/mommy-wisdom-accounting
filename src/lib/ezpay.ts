@@ -109,11 +109,19 @@ export async function issueInvoice(
   const taxAmount = totalAmount - salesAmount;
 
   // 組合商品資訊
-  const itemName = params.items.map(i => i.name).join('|');
-  const itemCount = params.items.map(i => i.count).join('|');
-  const itemUnit = params.items.map(i => i.unit || '式').join('|');
-  const itemPrice = params.items.map(i => i.price).join('|');
-  const itemAmount = params.items.map(i => i.amount).join('|');
+// B2B 發票：ItemPrice / ItemAmt 必須為未稅金額；B2C 才是含稅金額
+const isB2B = params.invoiceType === 'B2B';
+const itemName = params.items.map(i => i.name).join('|');
+const itemCount = params.items.map(i => i.count).join('|');
+const itemUnit = params.items.map(i => i.unit || '式').join('|');
+const itemPrice = params.items.map(i => {
+  if (isB2B && taxRate > 0) return Math.round(i.price / (1 + taxRate));
+  return i.price;
+}).join('|');
+const itemAmount = params.items.map(i => {
+  if (isB2B && taxRate > 0) return Math.round(i.amount / (1 + taxRate));
+  return i.amount;
+}).join('|');
 
   // 建立 PostData 參數
   const postData: Record<string, string | number> = {
